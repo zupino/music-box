@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=Music Box FluidSynth service
+Requires=music-box-jack.service
+After=music-box-jack.service
+Before=music-box.service
+
+[Service]
+Type=simple
+User=@MUSIC_BOX_USER@
+Group=audio
+Environment=HOME=@MUSIC_BOX_HOME@
+EnvironmentFile=-/etc/music-box/music-box.env
+ExecStart=/usr/local/libexec/music-box/start-fluidsynth
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
