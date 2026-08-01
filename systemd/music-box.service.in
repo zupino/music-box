@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=Music Box stereo quantized looper
+Requires=music-box-jack.service
+Wants=music-box-fluidsynth.service
+After=music-box-jack.service music-box-fluidsynth.service
+
+[Service]
+Type=simple
+User=@MUSIC_BOX_USER@
+Group=audio
+Environment=HOME=@MUSIC_BOX_HOME@
+ExecStart=/usr/local/bin/music-box --config /etc/music-box/music-box.conf
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

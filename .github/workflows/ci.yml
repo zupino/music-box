@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+name: C build and tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JACK and ALSA headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjack-jackd2-dev libasound2-dev
+      - name: Build
+        run: make
+      - name: Unit tests
+        run: make test

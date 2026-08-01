@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+: "${MUSIC_BOX_SOUNDFONT:=/etc/music-box/soundfont.sf2}"
+: "${FLUIDSYNTH_GAIN:=0.70}"
+
+if [ ! -r "$MUSIC_BOX_SOUNDFONT" ]; then
+    echo "SoundFont is not readable: $MUSIC_BOX_SOUNDFONT" >&2
+    exit 1
+fi
+
+# audio.jack.autoconnect must remain disabled. Music Box routes FluidSynth into
+# its own mixer so that the exact speaker signal is available to the AEC.
+# /dev/zero preserves compatibility with old FluidSynth packages that exited
+# after receiving EOF on stdin even when used as a service.
+exec /usr/bin/fluidsynth \
+    -a jack \
+    -m alsa_seq \
+    -i \
+    -s \
+    -g "$FLUIDSYNTH_GAIN" \
+    -o audio.jack.autoconnect=0 \
+    -o audio.jack.id=fluidsynth \
+    "$MUSIC_BOX_SOUNDFONT" < /dev/zero
