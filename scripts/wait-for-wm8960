@@ -1,0 +1,16 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+    if [ -r /proc/asound/cards ] && \
+       grep -q 'wm8960soundcard' /proc/asound/cards; then
+        exit 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+done
+
+echo "WM8960 ALSA card did not appear within 30 seconds" >&2
+exit 1
