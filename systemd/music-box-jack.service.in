@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=Music Box JACK audio server
+After=sound.target wm8960-soundcard.service
+Before=music-box-fluidsynth.service music-box.service
+
+[Service]
+Type=simple
+User=@MUSIC_BOX_USER@
+Group=audio
+Environment=HOME=@MUSIC_BOX_HOME@
+Environment=JACK_NO_AUDIO_RESERVATION=1
+ExecStartPre=/usr/local/libexec/music-box/wait-for-wm8960
+ExecStart=/usr/bin/jackd -R -d alsa -d hw:wm8960soundcard -r 48000 -p 256 -n 2 -i 2 -o 2
+Restart=on-failure
+RestartSec=3
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
