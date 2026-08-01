@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT
+music-box
+src/*.o
+build/
+*.wav
+*.sf2
+*.sf3
