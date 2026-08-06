@@ -10,16 +10,10 @@
 
 static char *trim(char *text)
 {
-    while (isspace((unsigned char)*text)) {
-        ++text;
-    }
-    if (*text == '\0') {
-        return text;
-    }
+    while (isspace((unsigned char)*text)) ++text;
+    if (*text == '\0') return text;
     char *end = text + strlen(text) - 1;
-    while (end > text && isspace((unsigned char)*end)) {
-        *end-- = '\0';
-    }
+    while (end > text && isspace((unsigned char)*end)) *end-- = '\0';
     return text;
 }
 
@@ -28,9 +22,7 @@ static bool parse_unsigned(const char *text, unsigned long *value)
     char *end = NULL;
     errno = 0;
     const unsigned long parsed = strtoul(text, &end, 10);
-    if (errno != 0 || end == text || *trim(end) != '\0') {
-        return false;
-    }
+    if (errno != 0 || end == text || *trim(end) != '\0') return false;
     *value = parsed;
     return true;
 }
@@ -40,9 +32,7 @@ static bool parse_float(const char *text, float *value)
     char *end = NULL;
     errno = 0;
     const float parsed = strtof(text, &end);
-    if (errno != 0 || end == text || *trim(end) != '\0') {
-        return false;
-    }
+    if (errno != 0 || end == text || *trim(end) != '\0') return false;
     *value = parsed;
     return true;
 }
@@ -62,12 +52,34 @@ static bool parse_bool(const char *text, bool *value)
     return false;
 }
 
+static bool parse_master_volume_cc(const char *text, int *value)
+{
+    if (strcasecmp(text, "off") == 0 || strcasecmp(text, "disabled") == 0) {
+        *value = MUSIC_BOX_MIDI_CC_DISABLED;
+        return true;
+    }
+    unsigned long parsed = 0u;
+    if (!parse_unsigned(text, &parsed) || parsed > 127u) return false;
+    *value = (int)parsed;
+    return true;
+}
+
+static bool parse_master_volume_channel(const char *text, int *value)
+{
+    if (strcasecmp(text, "any") == 0) {
+        *value = MUSIC_BOX_MIDI_CHANNEL_ANY;
+        return true;
+    }
+    unsigned long parsed = 0u;
+    if (!parse_unsigned(text, &parsed) || parsed > 15u) return false;
+    *value = (int)parsed;
+    return true;
+}
+
 static bool copy_name(char *destination, const char *source)
 {
     const size_t length = strlen(source);
-    if (length == 0u || length >= MUSIC_BOX_NAME_LENGTH) {
-        return false;
-    }
+    if (length == 0u || length >= MUSIC_BOX_NAME_LENGTH) return false;
     memcpy(destination, source, length + 1u);
     return true;
 }
@@ -76,18 +88,14 @@ static bool parse_loop_notes(const char *text,
                              uint8_t notes[MUSIC_BOX_LOOP_COUNT])
 {
     char buffer[128];
-    if (strlen(text) >= sizeof(buffer)) {
-        return false;
-    }
+    if (strlen(text) >= sizeof(buffer)) return false;
     strcpy(buffer, text);
     char *save = NULL;
     char *token = strtok_r(buffer, ",", &save);
     size_t index = 0u;
     while (token != NULL && index < MUSIC_BOX_LOOP_COUNT) {
         unsigned long note = 0u;
-        if (!parse_unsigned(trim(token), &note) || note > 127u) {
-            return false;
-        }
+        if (!parse_unsigned(trim(token), &note) || note > 127u) return false;
         notes[index++] = (uint8_t)note;
         token = strtok_r(NULL, ",", &save);
     }
@@ -113,6 +121,9 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->synth_gain = 0.70f;
     config->loop_gain = 0.70f;
     config->master_gain = 0.80f;
+    config->master_volume_cc = MUSIC_BOX_MIDI_CC_DISABLED;
+    config->master_volume_channel = MUSIC_BOX_MIDI_CHANNEL_ANY;
+    config->master_volume_smoothing_ms = 30u;
     strcpy(config->midi_source_prefix, "MPD218");
     strcpy(config->synth_midi_prefix, "FLUID Synth");
     strcpy(config->synth_jack_prefix, "fluidsynth");
@@ -187,6 +198,13 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
             valid = parse_float(value, &config->loop_gain) && config->loop_gain >= 0.0f && config->loop_gain <= 2.0f;
         } else if (strcmp(key, "master_gain") == 0) {
             valid = parse_float(value, &config->master_gain) && config->master_gain >= 0.0f && config->master_gain <= 2.0f;
+        } else if (strcmp(key, "master_volume_cc") == 0) {
+            valid = parse_master_volume_cc(value, &config->master_volume_cc);
+        } else if (strcmp(key, "master_volume_channel") == 0) {
+            valid = parse_master_volume_channel(value, &config->master_volume_channel);
+        } else if (strcmp(key, "master_volume_smoothing_ms") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 1000u;
+            config->master_volume_smoothing_ms = (uint32_t)unsigned_value;
         } else if (strcmp(key, "midi_source_prefix") == 0) {
             valid = copy_name(config->midi_source_prefix, value);
         } else if (strcmp(key, "synth_midi_prefix") == 0) {
