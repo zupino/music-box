@@ -22,28 +22,76 @@ static int loop_slot_for_note(const MusicBoxMidi *midi, unsigned int note)
 
 static void queue_pad_command(MusicBoxMidi *midi, MusicBoxCommandType type, uint8_t slot)
 {
-    const MusicBoxCommand command = {.type = type, .slot = slot, .tempo_millibpm = 0u};
+    const MusicBoxCommand command = {
+        .type = type,
+        .slot = slot,
+        .midi_value = 0u,
+        .tempo_millibpm = 0u,
+    };
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; event dropped\n");
 }
 
-static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_port, snd_seq_event_t *event)
+static void queue_master_volume_command(MusicBoxMidi *midi, uint8_t value)
 {
-    const bool note_event = event->type == SND_SEQ_EVENT_NOTEON || event->type == SND_SEQ_EVENT_NOTEOFF;
+    const MusicBoxCommand command = {
+        .type = MUSIC_BOX_COMMAND_SET_MASTER_VOLUME,
+        .slot = 0u,
+        .midi_value = value,
+        .tempo_millibpm = 0u,
+    };
+    if (!music_box_command_queue_push(midi->commands, &command))
+        fprintf(stderr, "MIDI command queue full; volume event dropped\n");
+}
+
+static bool is_master_volume_event(const MusicBoxMidi *midi,
+                                   const snd_seq_event_t *event)
+{
+    if (event->type != SND_SEQ_EVENT_CONTROLLER ||
+        midi->config.master_volume_cc == MUSIC_BOX_MIDI_CC_DISABLED) {
+        return false;
+    }
+    const int channel = (int)event->data.control.channel;
+    const int controller = (int)event->data.control.param;
+    return controller == midi->config.master_volume_cc &&
+           (midi->config.master_volume_channel == MUSIC_BOX_MIDI_CHANNEL_ANY ||
+            channel == midi->config.master_volume_channel);
+}
+
+static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer,
+                         int output_port, snd_seq_event_t *event)
+{
+    if (is_master_volume_event(midi, event)) {
+        int value = event->data.control.value;
+        if (value < 0) value = 0;
+        if (value > 127) value = 127;
+        queue_master_volume_command(midi, (uint8_t)value);
+        return;
+    }
+
+    const bool note_event = event->type == SND_SEQ_EVENT_NOTEON ||
+                            event->type == SND_SEQ_EVENT_NOTEOFF;
     int slot = -1;
     if (note_event) slot = loop_slot_for_note(midi, event->data.note.note);
     if (slot >= 0) {
-        const bool pressed = event->type == SND_SEQ_EVENT_NOTEON && event->data.note.velocity > 0u;
-        queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
+        const bool pressed = event->type == SND_SEQ_EVENT_NOTEON &&
+                             event->data.note.velocity > 0u;
+        queue_pad_command(midi,
+                          pressed ? MUSIC_BOX_COMMAND_PAD_PRESS
+                                  : MUSIC_BOX_COMMAND_PAD_RELEASE,
+                          (uint8_t)slot);
         return;
     }
+
     snd_seq_ev_set_source(event, output_port);
     snd_seq_ev_set_subs(event);
     snd_seq_ev_set_direct(event);
     (void)snd_seq_event_output_direct(sequencer, event);
 }
 
-static void connect_matching_ports(snd_seq_t *sequencer, int own_client, int input_port, int output_port, const MusicBoxConfig *config)
+static void connect_matching_ports(snd_seq_t *sequencer, int own_client,
+                                   int input_port, int output_port,
+                                   const MusicBoxConfig *config)
 {
     snd_seq_client_info_t *client_info = NULL;
     snd_seq_port_info_t *port_info = NULL;
@@ -62,15 +110,21 @@ static void connect_matching_ports(snd_seq_t *sequencer, int own_client, int inp
         while (snd_seq_query_next_port(sequencer, port_info) >= 0) {
             const int port = snd_seq_port_info_get_port(port_info);
             const unsigned int capabilities = snd_seq_port_info_get_capability(port_info);
-            if (is_controller && (capabilities & SND_SEQ_PORT_CAP_READ) != 0u && (capabilities & SND_SEQ_PORT_CAP_SUBS_READ) != 0u) {
+            if (is_controller &&
+                (capabilities & SND_SEQ_PORT_CAP_READ) != 0u &&
+                (capabilities & SND_SEQ_PORT_CAP_SUBS_READ) != 0u) {
                 const int result = snd_seq_connect_from(sequencer, input_port, client, port);
                 if (result < 0 && result != -EBUSY)
-                    fprintf(stderr, "Cannot connect MIDI controller %s %d:%d: %s\n", client_name, client, port, snd_strerror(result));
+                    fprintf(stderr, "Cannot connect MIDI controller %s %d:%d: %s\n",
+                            client_name, client, port, snd_strerror(result));
             }
-            if (is_synth && (capabilities & SND_SEQ_PORT_CAP_WRITE) != 0u && (capabilities & SND_SEQ_PORT_CAP_SUBS_WRITE) != 0u) {
+            if (is_synth &&
+                (capabilities & SND_SEQ_PORT_CAP_WRITE) != 0u &&
+                (capabilities & SND_SEQ_PORT_CAP_SUBS_WRITE) != 0u) {
                 const int result = snd_seq_connect_to(sequencer, output_port, client, port);
                 if (result < 0 && result != -EBUSY)
-                    fprintf(stderr, "Cannot connect synthesizer %s %d:%d: %s\n", client_name, client, port, snd_strerror(result));
+                    fprintf(stderr, "Cannot connect synthesizer %s %d:%d: %s\n",
+                            client_name, client, port, snd_strerror(result));
             }
         }
     }
@@ -80,14 +134,16 @@ static uint64_t monotonic_milliseconds(void)
 {
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC, &time);
-    return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_nsec / 1000000u;
+    return (uint64_t)time.tv_sec * 1000u +
+           (uint64_t)time.tv_nsec / 1000000u;
 }
 
 static void *midi_thread(void *argument)
 {
     MusicBoxMidi *midi = argument;
     snd_seq_t *sequencer = NULL;
-    int result = snd_seq_open(&sequencer, "default", SND_SEQ_OPEN_DUPLEX, SND_SEQ_NONBLOCK);
+    int result = snd_seq_open(&sequencer, "default", SND_SEQ_OPEN_DUPLEX,
+                              SND_SEQ_NONBLOCK);
     if (result < 0) {
         fprintf(stderr, "Cannot open ALSA sequencer: %s\n", snd_strerror(result));
         atomic_store(&midi->running, false);
@@ -95,8 +151,14 @@ static void *midi_thread(void *argument)
     }
     snd_seq_set_client_name(sequencer, "Music Box");
     const int own_client = snd_seq_client_id(sequencer);
-    const int input_port = snd_seq_create_simple_port(sequencer, "Looper Control", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE, SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
-    const int output_port = snd_seq_create_simple_port(sequencer, "Synth Out", SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ, SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
+    const int input_port = snd_seq_create_simple_port(
+        sequencer, "Looper Control",
+        SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
+        SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
+    const int output_port = snd_seq_create_simple_port(
+        sequencer, "Synth Out",
+        SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ,
+        SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
     if (input_port < 0 || output_port < 0) {
         fprintf(stderr, "Cannot create ALSA sequencer ports\n");
         snd_seq_close(sequencer);
@@ -107,7 +169,8 @@ static void *midi_thread(void *argument)
     while (atomic_load_explicit(&midi->running, memory_order_acquire)) {
         const uint64_t now = monotonic_milliseconds();
         if (now >= next_connection_scan) {
-            connect_matching_ports(sequencer, own_client, input_port, output_port, &midi->config);
+            connect_matching_ports(sequencer, own_client, input_port,
+                                   output_port, &midi->config);
             next_connection_scan = now + 1000u;
         }
         snd_seq_event_t *event = NULL;
@@ -120,7 +183,8 @@ static void *midi_thread(void *argument)
     return NULL;
 }
 
-bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config, MusicBoxCommandQueue *commands)
+bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config,
+                          MusicBoxCommandQueue *commands)
 {
     memset(midi, 0, sizeof(*midi));
     midi->config = *config;
