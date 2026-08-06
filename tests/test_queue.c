@@ -12,8 +12,10 @@ int main(void)
     assert(!music_box_command_queue_pop(&queue, &output));
     for (unsigned int index = 0u; index < MUSIC_BOX_QUEUE_CAPACITY - 1u; ++index) {
         const MusicBoxCommand command = {
-            .type = MUSIC_BOX_COMMAND_PAD_PRESS,
+            .type = index == 0u ? MUSIC_BOX_COMMAND_SET_MASTER_VOLUME
+                                : MUSIC_BOX_COMMAND_PAD_PRESS,
             .slot = (uint8_t)(index % 4u),
+            .midi_value = (uint8_t)(index % 128u),
             .tempo_millibpm = index,
         };
         assert(music_box_command_queue_push(&queue, &command));
@@ -21,12 +23,14 @@ int main(void)
     const MusicBoxCommand extra = {
         .type = MUSIC_BOX_COMMAND_PAD_RELEASE,
         .slot = 0u,
+        .midi_value = 0u,
         .tempo_millibpm = 0u,
     };
     assert(!music_box_command_queue_push(&queue, &extra));
     for (unsigned int index = 0u; index < MUSIC_BOX_QUEUE_CAPACITY - 1u; ++index) {
         assert(music_box_command_queue_pop(&queue, &output));
         assert(output.tempo_millibpm == index);
+        assert(output.midi_value == (uint8_t)(index % 128u));
     }
     assert(!music_box_command_queue_pop(&queue, &output));
     puts("queue tests passed");

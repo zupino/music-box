@@ -26,6 +26,10 @@ typedef struct {
     MusicBoxEchoCanceller echo_canceller;
     MusicBoxCommandQueue *commands;
     MusicBoxEventQueue *events;
+    float master_gain_current;
+    float master_gain_target;
+    float master_gain_step;
+    uint32_t master_gain_frames_remaining;
     atomic_bool jack_shutdown;
 } MusicBoxAudioEngine;
 

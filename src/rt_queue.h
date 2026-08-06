@@ -11,12 +11,14 @@
 typedef enum {
     MUSIC_BOX_COMMAND_PAD_PRESS = 1,
     MUSIC_BOX_COMMAND_PAD_RELEASE,
-    MUSIC_BOX_COMMAND_SET_TEMPO
+    MUSIC_BOX_COMMAND_SET_TEMPO,
+    MUSIC_BOX_COMMAND_SET_MASTER_VOLUME
 } MusicBoxCommandType;
 
 typedef struct {
     MusicBoxCommandType type;
     uint8_t slot;
+    uint8_t midi_value;
     uint32_t tempo_millibpm;
 } MusicBoxCommand;
 
@@ -27,7 +29,8 @@ typedef enum {
     MUSIC_BOX_EVENT_LOOP_STOP_ARMED,
     MUSIC_BOX_EVENT_LOOP_STOPPED,
     MUSIC_BOX_EVENT_LOOP_FULL,
-    MUSIC_BOX_EVENT_TEMPO_CHANGED
+    MUSIC_BOX_EVENT_TEMPO_CHANGED,
+    MUSIC_BOX_EVENT_MASTER_VOLUME_CHANGED
 } MusicBoxEventType;
 
 typedef struct {

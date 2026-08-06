@@ -10,6 +10,8 @@
 #include <stdint.h>
 
 #define MUSIC_BOX_NAME_LENGTH 64u
+#define MUSIC_BOX_MIDI_CC_DISABLED (-1)
+#define MUSIC_BOX_MIDI_CHANNEL_ANY (-1)
 
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];
@@ -28,6 +30,10 @@ typedef struct {
     float synth_gain;
     float loop_gain;
     float master_gain;
+
+    int master_volume_cc;
+    int master_volume_channel;
+    uint32_t master_volume_smoothing_ms;
 
     char midi_source_prefix[MUSIC_BOX_NAME_LENGTH];
     char synth_midi_prefix[MUSIC_BOX_NAME_LENGTH];
