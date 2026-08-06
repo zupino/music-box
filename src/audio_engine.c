@@ -23,20 +23,70 @@ static void emit_tempo_event(MusicBoxAudioEngine *engine)
     (void)music_box_event_queue_push(engine->events, &event);
 }
 
+static void emit_master_volume_event(MusicBoxAudioEngine *engine,
+                                     uint8_t midi_value)
+{
+    const MusicBoxEvent event = {
+        .type = MUSIC_BOX_EVENT_MASTER_VOLUME_CHANGED,
+        .slot = 0u,
+        .value = midi_value,
+    };
+    (void)music_box_event_queue_push(engine->events, &event);
+}
+
+static void set_master_volume(MusicBoxAudioEngine *engine, uint8_t midi_value)
+{
+    const float normalized = (float)midi_value / 127.0f;
+    const float target = normalized * normalized * engine->config.master_gain;
+    const uint64_t requested_frames =
+        (uint64_t)engine->transport.sample_rate *
+        (uint64_t)engine->config.master_volume_smoothing_ms / 1000u;
+
+    engine->master_gain_target = target;
+    if (requested_frames == 0u) {
+        engine->master_gain_current = target;
+        engine->master_gain_step = 0.0f;
+        engine->master_gain_frames_remaining = 0u;
+    } else {
+        const uint32_t frames = requested_frames > UINT32_MAX
+                                    ? UINT32_MAX
+                                    : (uint32_t)requested_frames;
+        engine->master_gain_frames_remaining = frames;
+        engine->master_gain_step =
+            (target - engine->master_gain_current) / (float)frames;
+    }
+    emit_master_volume_event(engine, midi_value);
+}
+
+static void advance_master_gain(MusicBoxAudioEngine *engine)
+{
+    if (engine->master_gain_frames_remaining == 0u) return;
+    engine->master_gain_current += engine->master_gain_step;
+    --engine->master_gain_frames_remaining;
+    if (engine->master_gain_frames_remaining == 0u)
+        engine->master_gain_current = engine->master_gain_target;
+}
+
 static void process_commands(MusicBoxAudioEngine *engine)
 {
     MusicBoxCommand command;
     while (music_box_command_queue_pop(engine->commands, &command)) {
         switch (command.type) {
         case MUSIC_BOX_COMMAND_PAD_PRESS:
-            music_box_loop_bank_pad_press(&engine->loop_bank, command.slot, &engine->transport);
+            music_box_loop_bank_pad_press(&engine->loop_bank, command.slot,
+                                          &engine->transport);
             break;
         case MUSIC_BOX_COMMAND_PAD_RELEASE:
-            music_box_loop_bank_pad_release(&engine->loop_bank, command.slot, &engine->transport);
+            music_box_loop_bank_pad_release(&engine->loop_bank, command.slot,
+                                            &engine->transport);
             break;
         case MUSIC_BOX_COMMAND_SET_TEMPO:
-            music_box_transport_set_tempo(&engine->transport, command.tempo_millibpm);
+            music_box_transport_set_tempo(&engine->transport,
+                                          command.tempo_millibpm);
             emit_tempo_event(engine);
+            break;
+        case MUSIC_BOX_COMMAND_SET_MASTER_VOLUME:
+            set_master_volume(engine, command.midi_value);
             break;
         default:
             break;
@@ -47,30 +97,49 @@ static void process_commands(MusicBoxAudioEngine *engine)
 static int audio_process(jack_nframes_t frame_count, void *argument)
 {
     MusicBoxAudioEngine *engine = argument;
-    const jack_default_audio_sample_t *microphone_left = jack_port_get_buffer(engine->microphone_left, frame_count);
-    const jack_default_audio_sample_t *microphone_right = jack_port_get_buffer(engine->microphone_right, frame_count);
-    const jack_default_audio_sample_t *synth_left = jack_port_get_buffer(engine->synth_left, frame_count);
-    const jack_default_audio_sample_t *synth_right = jack_port_get_buffer(engine->synth_right, frame_count);
-    jack_default_audio_sample_t *output_left = jack_port_get_buffer(engine->output_left, frame_count);
-    jack_default_audio_sample_t *output_right = jack_port_get_buffer(engine->output_right, frame_count);
+    const jack_default_audio_sample_t *microphone_left =
+        jack_port_get_buffer(engine->microphone_left, frame_count);
+    const jack_default_audio_sample_t *microphone_right =
+        jack_port_get_buffer(engine->microphone_right, frame_count);
+    const jack_default_audio_sample_t *synth_left =
+        jack_port_get_buffer(engine->synth_left, frame_count);
+    const jack_default_audio_sample_t *synth_right =
+        jack_port_get_buffer(engine->synth_right, frame_count);
+    jack_default_audio_sample_t *output_left =
+        jack_port_get_buffer(engine->output_left, frame_count);
+    jack_default_audio_sample_t *output_right =
+        jack_port_get_buffer(engine->output_right, frame_count);
 
     process_commands(engine);
     for (jack_nframes_t frame = 0u; frame < frame_count; ++frame) {
-        music_box_loop_bank_apply_boundary(&engine->loop_bank, &engine->transport);
+        music_box_loop_bank_apply_boundary(&engine->loop_bank,
+                                           &engine->transport);
+        advance_master_gain(engine);
+
         float loop_left = 0.0f;
         float loop_right = 0.0f;
-        music_box_loop_bank_mix_sample(&engine->loop_bank, &loop_left, &loop_right);
-        const float mixed_left = (synth_left[frame] * engine->config.synth_gain + loop_left * engine->config.loop_gain) * engine->config.master_gain;
-        const float mixed_right = (synth_right[frame] * engine->config.synth_gain + loop_right * engine->config.loop_gain) * engine->config.master_gain;
+        music_box_loop_bank_mix_sample(&engine->loop_bank,
+                                       &loop_left, &loop_right);
+        const float mixed_left =
+            (synth_left[frame] * engine->config.synth_gain +
+             loop_left * engine->config.loop_gain) *
+            engine->master_gain_current;
+        const float mixed_right =
+            (synth_right[frame] * engine->config.synth_gain +
+             loop_right * engine->config.loop_gain) *
+            engine->master_gain_current;
         const float final_left = clamp_sample(mixed_left);
         const float final_right = clamp_sample(mixed_right);
+
         float clean_left = 0.0f;
         float clean_right = 0.0f;
         music_box_echo_cancel_process(&engine->echo_canceller,
-                                      microphone_left[frame], microphone_right[frame],
+                                      microphone_left[frame],
+                                      microphone_right[frame],
                                       final_left, final_right,
                                       &clean_left, &clean_right);
-        music_box_loop_bank_record_sample(&engine->loop_bank, clean_left, clean_right);
+        music_box_loop_bank_record_sample(&engine->loop_bank,
+                                          clean_left, clean_right);
         output_left[frame] = final_left;
         output_right[frame] = final_right;
         music_box_transport_advance(&engine->transport);
@@ -86,13 +155,20 @@ static void jack_shutdown_callback(void *argument)
 
 static bool register_ports(MusicBoxAudioEngine *engine)
 {
-    engine->microphone_left = jack_port_register(engine->client, "mic_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
-    engine->microphone_right = jack_port_register(engine->client, "mic_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
-    engine->synth_left = jack_port_register(engine->client, "synth_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
-    engine->synth_right = jack_port_register(engine->client, "synth_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
-    engine->output_left = jack_port_register(engine->client, "out_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0u);
-    engine->output_right = jack_port_register(engine->client, "out_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0u);
-    return engine->microphone_left != NULL && engine->microphone_right != NULL &&
+    engine->microphone_left = jack_port_register(
+        engine->client, "mic_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
+    engine->microphone_right = jack_port_register(
+        engine->client, "mic_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
+    engine->synth_left = jack_port_register(
+        engine->client, "synth_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
+    engine->synth_right = jack_port_register(
+        engine->client, "synth_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0u);
+    engine->output_left = jack_port_register(
+        engine->client, "out_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0u);
+    engine->output_right = jack_port_register(
+        engine->client, "out_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0u);
+    return engine->microphone_left != NULL &&
+           engine->microphone_right != NULL &&
            engine->synth_left != NULL && engine->synth_right != NULL &&
            engine->output_left != NULL && engine->output_right != NULL;
 }
@@ -106,18 +182,31 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
     engine->config = *config;
     engine->commands = commands;
     engine->events = events;
+    engine->master_gain_current = config->master_gain;
+    engine->master_gain_target = config->master_gain;
     atomic_init(&engine->jack_shutdown, false);
+
     jack_status_t status = 0;
     engine->client = jack_client_open("music_box", JackNoStartServer, &status);
     if (engine->client == NULL) {
-        fprintf(stderr, "Cannot connect to JACK (status 0x%x). Is music-box-jack running?\n", status);
+        fprintf(stderr,
+                "Cannot connect to JACK (status 0x%x). Is music-box-jack running?\n",
+                status);
         return false;
     }
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
-    if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
-        !music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode, events) ||
-        !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
-                                    config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio)) {
+    if (!music_box_transport_init(&engine->transport, sample_rate,
+                                  config->tempo_millibpm,
+                                  config->beats_per_bar) ||
+        !music_box_loop_bank_init(&engine->loop_bank, sample_rate,
+                                  config->max_loop_seconds,
+                                  config->quantize_mode, events) ||
+        !music_box_echo_cancel_init(&engine->echo_canceller,
+                                    config->aec_enabled,
+                                    config->aec_taps,
+                                    config->aec_delay_frames,
+                                    config->aec_step_size,
+                                    config->aec_double_talk_ratio)) {
         fprintf(stderr, "Cannot initialize the audio engine buffers\n");
         music_box_audio_engine_destroy(engine);
         return false;
@@ -149,43 +238,64 @@ void music_box_audio_engine_destroy(MusicBoxAudioEngine *engine)
     music_box_loop_bank_destroy(&engine->loop_bank);
 }
 
-static void connect_if_needed(jack_client_t *client, const char *source, const char *destination)
+static void connect_if_needed(jack_client_t *client, const char *source,
+                              const char *destination)
 {
-    if (source == NULL || destination == NULL || jack_port_by_name(client, source) == NULL || jack_port_by_name(client, destination) == NULL) return;
+    if (source == NULL || destination == NULL ||
+        jack_port_by_name(client, source) == NULL ||
+        jack_port_by_name(client, destination) == NULL) return;
     const int result = jack_connect(client, source, destination);
-    if (result != 0 && result != EEXIST) fprintf(stderr, "JACK cannot connect %s -> %s (%d)\n", source, destination, result);
+    if (result != 0 && result != EEXIST)
+        fprintf(stderr, "JACK cannot connect %s -> %s (%d)\n",
+                source, destination, result);
 }
 
-static void disconnect_if_connected(jack_client_t *client, const char *source, const char *destination)
+static void disconnect_if_connected(jack_client_t *client,
+                                    const char *source,
+                                    const char *destination)
 {
     jack_port_t *port = jack_port_by_name(client, source);
-    if (port != NULL && jack_port_connected_to(port, destination)) (void)jack_disconnect(client, source, destination);
+    if (port != NULL && jack_port_connected_to(port, destination))
+        (void)jack_disconnect(client, source, destination);
 }
 
 static bool starts_with_client(const char *port_name, const char *prefix)
 {
     const size_t length = strlen(prefix);
-    return strncmp(port_name, prefix, length) == 0 && port_name[length] == ':';
+    return strncmp(port_name, prefix, length) == 0 &&
+           port_name[length] == ':';
 }
 
-static void find_synth_ports(MusicBoxAudioEngine *engine, const char **left, const char **right, const char ***allocated_ports)
+static void find_synth_ports(MusicBoxAudioEngine *engine,
+                             const char **left, const char **right,
+                             const char ***allocated_ports)
 {
-    const char **ports = jack_get_ports(engine->client, NULL, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput);
+    const char **ports = jack_get_ports(engine->client, NULL,
+                                        JACK_DEFAULT_AUDIO_TYPE,
+                                        JackPortIsOutput);
     *allocated_ports = ports;
     if (ports == NULL) return;
     const char *fallback[2] = {NULL, NULL};
     size_t fallback_count = 0u;
     for (size_t index = 0u; ports[index] != NULL; ++index) {
         const char *name = ports[index];
-        if (!starts_with_client(name, engine->config.synth_jack_prefix)) continue;
+        if (!starts_with_client(name, engine->config.synth_jack_prefix))
+            continue;
         if (fallback_count < 2u) fallback[fallback_count++] = name;
         const char *short_name = strchr(name, ':');
         short_name = short_name == NULL ? name : short_name + 1;
-        if (*left == NULL && (strstr(short_name, "l_") != NULL || strstr(short_name, "left") != NULL || strstr(short_name, "out_1") != NULL)) *left = name;
-        if (*right == NULL && (strstr(short_name, "r_") != NULL || strstr(short_name, "right") != NULL || strstr(short_name, "out_2") != NULL)) *right = name;
+        if (*left == NULL &&
+            (strstr(short_name, "l_") != NULL ||
+             strstr(short_name, "left") != NULL ||
+             strstr(short_name, "out_1") != NULL)) *left = name;
+        if (*right == NULL &&
+            (strstr(short_name, "r_") != NULL ||
+             strstr(short_name, "right") != NULL ||
+             strstr(short_name, "out_2") != NULL)) *right = name;
     }
     if (*left == NULL) *left = fallback[0];
-    if (*right == NULL) *right = fallback[1] != NULL ? fallback[1] : fallback[0];
+    if (*right == NULL) *right = fallback[1] != NULL ? fallback[1]
+                                                     : fallback[0];
 }
 
 void music_box_audio_engine_connect_ports(MusicBoxAudioEngine *engine)
@@ -200,16 +310,19 @@ void music_box_audio_engine_connect_ports(MusicBoxAudioEngine *engine)
     connect_if_needed(engine->client, "system:capture_2", own_mic_right);
     connect_if_needed(engine->client, own_output_left, "system:playback_1");
     connect_if_needed(engine->client, own_output_right, "system:playback_2");
+
     const char *synth_left = NULL;
     const char *synth_right = NULL;
     const char **allocated_ports = NULL;
     find_synth_ports(engine, &synth_left, &synth_right, &allocated_ports);
     if (synth_left != NULL) {
-        disconnect_if_connected(engine->client, synth_left, "system:playback_1");
+        disconnect_if_connected(engine->client, synth_left,
+                                "system:playback_1");
         connect_if_needed(engine->client, synth_left, own_synth_left);
     }
     if (synth_right != NULL) {
-        disconnect_if_connected(engine->client, synth_right, "system:playback_2");
+        disconnect_if_connected(engine->client, synth_right,
+                                "system:playback_2");
         connect_if_needed(engine->client, synth_right, own_synth_right);
     }
     if (allocated_ports != NULL) jack_free(allocated_ports);
@@ -217,7 +330,8 @@ void music_box_audio_engine_connect_ports(MusicBoxAudioEngine *engine)
 
 bool music_box_audio_engine_jack_shutdown(const MusicBoxAudioEngine *engine)
 {
-    return atomic_load_explicit(&engine->jack_shutdown, memory_order_acquire);
+    return atomic_load_explicit(&engine->jack_shutdown,
+                                memory_order_acquire);
 }
 
 uint32_t music_box_audio_engine_sample_rate(const MusicBoxAudioEngine *engine)
