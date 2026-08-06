@@ -50,6 +50,9 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         printf("Tempo: %.3f BPM\n", (double)event->value / 1000.0);
         break;
+    case MUSIC_BOX_EVENT_MASTER_VOLUME_CHANGED:
+        printf("Master volume: MIDI %llu / 127\n", (unsigned long long)event->value);
+        break;
     default:
         break;
     }
@@ -99,6 +102,13 @@ int main(int argc, char **argv)
            config.aec_enabled ? "enabled" : "disabled",
            config.aec_taps,
            config.aec_delay_frames);
+    if (config.master_volume_cc == MUSIC_BOX_MIDI_CC_DISABLED) {
+        printf("MIDI master volume: disabled\n");
+    } else if (config.master_volume_channel == MUSIC_BOX_MIDI_CHANNEL_ANY) {
+        printf("MIDI master volume: CC %d on any channel\n", config.master_volume_cc);
+    } else {
+        printf("MIDI master volume: CC %d on channel %d\n", config.master_volume_cc, config.master_volume_channel);
+    }
     fflush(stdout);
 
     unsigned int route_counter = 0u;
