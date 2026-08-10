@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "midi.h"
 
+#include <alloca.h>
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include <stdio.h>
@@ -37,7 +38,7 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
         return;
     }
-    snd_seq_ev_set_source(event, output_port);
+    snd_seq_ev_set_source(event, (unsigned char)output_port);
     snd_seq_ev_set_subs(event);
     snd_seq_ev_set_direct(event);
     (void)snd_seq_event_output_direct(sequencer, event);
