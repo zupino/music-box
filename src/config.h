@@ -19,6 +19,10 @@ typedef struct {
     uint32_t beats_per_bar;
     MusicBoxQuantizeMode quantize_mode;
 
+    bool display_enabled;
+    uint8_t display_i2c_address;
+    char display_i2c_device[MUSIC_BOX_NAME_LENGTH];
+
     bool aec_enabled;
     size_t aec_taps;
     size_t aec_delay_frames;
