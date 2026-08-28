@@ -21,6 +21,22 @@ No transient detector, pre-roll trimming or noise gate is included yet. Evaluate
 
 Tempo currently comes from configuration. Future options include an MPD218 knob, tap tempo, MIDI Clock, or first-loop tempo derivation.
 
+### MIDI knob controls and sound selection
+
+Future controller mappings may use one MPD218 knob for master output volume and another for selecting a larger bank of instruments or SoundFont presets. The mapping, value scaling, pickup behaviour and persistence still need to be designed.
+
 ### Loop editing
 
 Possible later additions: overdub/undo, mute/resume without replacement, fixed 1/2/4/8-bar lengths, persistent loop save/load and per-loop gain.
+
+### One-shot recording
+
+Add short pad-associated recordings that play once per tap instead of repeating like the current loop slots. Recording gestures, maximum duration, replacement and persistence remain to be specified.
+
+### Repeat/stutter effect
+
+Investigate a knob-controlled effect that repeatedly plays the most recent slice of audio, with the knob selecting the slice duration in milliseconds. Define the source signal, useful duration range, activation gesture, crossfades and real-time memory requirements before implementation.
+
+### Language-learning mode
+
+Explore an optional mode in which pads play pronunciations in several languages and a display shows a simple matching image. This is not part of the current headless application and would require display hardware/UI, content and language-pack formats, licensing rules, and a mode-selection design.
