@@ -1,6 +1,6 @@
 # Feature List
 
-This page summarises the capabilities currently implemented on the `feature/quantized-aec-refactor` branch and the features deliberately left for later work.
+This page summarises the capabilities currently implemented on the main development line and the features deliberately left for later work.
 
 ## Implemented
 

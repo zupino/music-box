@@ -8,6 +8,13 @@ if [ -r /etc/os-release ]; then
 fi
 uname -a
 
+printf '\n%s\n' '== SoundFont configuration =='
+if [ -r /etc/music-box/music-box.env ]; then
+    cat /etc/music-box/music-box.env
+else
+    printf '%s\n' '/etc/music-box/music-box.env is missing or unreadable'
+fi
+
 printf '\n%s\n' '== ALSA cards =='
 cat /proc/asound/cards 2>/dev/null || true
 aplay -l 2>&1 || true

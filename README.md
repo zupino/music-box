@@ -4,6 +4,25 @@ Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into 
 
 The project deliberately stays small: one C11 process for audio/loop state/MIDI routing, JACK for low-latency audio, ALSA sequencer MIDI, FluidSynth as a separate service, and no bundled third-party source or SoundFonts.
 
+## Quick install (fresh Raspberry Pi OS Lite)
+
+Raspberry Pi OS Lite 64-bit (Bookworm or Trixie) is a supported, headless target; a desktop environment is neither installed nor required. After flashing the image, boot it, connect networking and log in over SSH, then:
+
+```bash
+sudo apt update && sudo apt full-upgrade -y
+sudo reboot
+git clone https://github.com/zupino/music-box.git
+cd music-box
+sudo ./scripts/install-wm8960-driver.sh --accept-third-party # only if the HAT is absent from aplay -l
+sudo reboot                                                  # required after driver installation
+cd music-box
+sudo ./scripts/install.sh --migrate-legacy
+sudo reboot
+music-box-check
+```
+
+Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is already listed. This project is intentionally headless and does not draw a UI on HDMI or an attached display. See [`docs/installation.md`](docs/installation.md) for image preparation, verification, SoundFont selection and safe speaker wiring.
+
 ## Current features
 
 - stereo recording from both WM8960 microphones;
@@ -40,32 +59,6 @@ WM8960 microphones --> AEC ----+--> quantized loop recorder
 ```
 
 FluidSynth is routed through Music Box rather than directly to the physical playback ports so AEC sees the exact loudspeaker signal.
-
-## Install
-
-First make sure `aplay -l` and `arecord -l` show `wm8960soundcard`. Then:
-
-```bash
-git clone https://github.com/zupino/music-box.git
-cd music-box
-sudo bash ./scripts/install.sh --migrate-legacy
-sudo reboot
-```
-
-Custom SoundFont:
-
-```bash
-sudo bash ./scripts/install.sh --migrate-legacy --soundfont /path/to/file.sf2
-```
-
-If the HAT is absent, the optional helper downloads and runs Waveshare's external GPL driver installer:
-
-```bash
-sudo bash ./scripts/install-wm8960-driver.sh --accept-third-party
-sudo reboot
-```
-
-No Waveshare source is contained here. Read `THIRD_PARTY.md` first.
 
 ## Controls
 
@@ -131,7 +124,7 @@ The unit suite covers transport boundaries, lock-free queues, quantized loop sta
 
 ## Documentation
 
-- `docs/installation.md` — Raspberry Pi OS/Ubuntu installation and migration
+- `docs/installation.md` — Raspberry Pi OS/Ubuntu installation, migration and complete cleanup
 - `docs/architecture.md` — real-time ownership, signal graph and DSP structure
 - `docs/implementation-history.md` — complete intervention summary
 - `docs/legacy-raspbian.md` — Stretch/4.19/DKMS/JACK special cases

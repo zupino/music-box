@@ -2,6 +2,10 @@
 
 Run `music-box-check` for OS/kernel information, ALSA cards, service status, JACK connections and ALSA sequencer routes.
 
+## No picture or display UI
+
+Music Box is a headless audio service and does not currently render a user interface. Raspberry Pi OS Lite has no desktop by design. Diagnose the application with `music-box-check`, `systemctl status music-box-jack music-box-fluidsynth music-box`, and the service journals. A language-learning display mode is only a roadmap proposal.
+
 ## Active services but no audio
 
 ```bash
@@ -26,6 +30,8 @@ Expected while JACK owns the codec. Stop `music-box-jack` before direct ALSA tes
 ## Loops work but synth pads are silent
 
 Check `aconnect -l` and `jack_lsp -c`. Expected MIDI is MPD218 to Music Box and Music Box Synth Out to FluidSynth. Expected audio is FluidSynth outputs to `music_box:synth_l/r`. FluidSynth must not bypass Music Box directly to system playback because the AEC would not see it.
+
+If the FluidSynth journal says that `/etc/music-box/soundfont.sf2` is unreadable, that path came from an older installation. The current installer records an existing system SoundFont in `/etc/music-box/music-box.env`; rerun `sudo ./scripts/install.sh --migrate-legacy` or explicitly add `--soundfont /absolute/path/to/file.sf2`.
 
 ## WM8960 missing after reboot
 
