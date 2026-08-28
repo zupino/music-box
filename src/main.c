@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "audio_engine.h"
 #include "config.h"
+#include "display.h"
 #include "midi.h"
 #include "rt_queue.h"
 
@@ -50,6 +51,8 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         printf("Tempo: %.3f BPM\n", (double)event->value / 1000.0);
         break;
+    case MUSIC_BOX_EVENT_BEAT:
+        break;
     default:
         break;
     }
@@ -84,8 +87,12 @@ int main(int argc, char **argv)
 
     MusicBoxAudioEngine engine;
     if (!music_box_audio_engine_init(&engine, &config, &commands, &events)) return EXIT_FAILURE;
+    MusicBoxDisplay display;
+    if (!music_box_display_init(&display, &config))
+        fprintf(stderr, "Continuing without the beat display\n");
     MusicBoxMidi midi;
     if (!music_box_midi_start(&midi, &config, &commands)) {
+        music_box_display_destroy(&display);
         music_box_audio_engine_destroy(&engine);
         return EXIT_FAILURE;
     }
@@ -106,13 +113,16 @@ int main(int argc, char **argv)
         if (route_counter == 0u) music_box_audio_engine_connect_ports(&engine);
         route_counter = (route_counter + 1u) % 10u;
         MusicBoxEvent event;
-        while (music_box_event_queue_pop(&events, &event))
+        while (music_box_event_queue_pop(&events, &event)) {
             print_event(&event, music_box_audio_engine_sample_rate(&engine));
+            music_box_display_handle_event(&display, &event);
+        }
         const struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000000};
         nanosleep(&pause, NULL);
     }
 
     music_box_midi_stop(&midi);
+    music_box_display_destroy(&display);
     music_box_audio_engine_destroy(&engine);
     return EXIT_SUCCESS;
 }

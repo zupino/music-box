@@ -34,6 +34,7 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 - dependency-free stereo NLMS acoustic echo reduction;
 - automatic JACK and ALSA MIDI connection repair;
 - ordered systemd startup;
+- 128x32 I2C OLED beat and recording-status display;
 - current Raspberry Pi OS and legacy Raspbian/kernel notes.
 
 The AEC is intentionally lightweight for Raspberry Pi 3. It is acoustic echo reduction rather than telephony-grade all-room cancellation; delay normally needs tuning for the enclosure.
@@ -93,6 +94,23 @@ sudo systemctl restart music-box.service
 ```
 
 See `docs/aec-tuning.md` for echo calibration.
+
+### Beat display
+
+An SSD1306-compatible 128x32 I2C OLED at address `0x3c` shows the tempo,
+recording state, and the current beat in a four-beat bar. The default device is
+`/dev/i2c-1`; the display is optional, and an initialization failure does not
+stop the audio engine. Configure it with:
+
+```ini
+display_enabled=true
+display_i2c_device=/dev/i2c-1
+display_i2c_address=0x3c
+```
+
+The display shares the I2C bus with the WM8960 but uses a different address.
+Display writes happen outside the JACK callback so I2C traffic cannot block the
+real-time audio thread.
 
 ## Services and diagnostics
 

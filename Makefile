@@ -15,7 +15,8 @@ SOURCES = \
 	src/loop_bank.c \
 	src/echo_cancel.c \
 	src/audio_engine.c \
-	src/midi.c
+	src/midi.c \
+	src/display.c
 OBJECTS = $(SOURCES:.c=.o)
 
 TEST_BINS = \
