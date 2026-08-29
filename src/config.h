@@ -22,6 +22,12 @@ typedef struct {
     bool display_enabled;
     uint8_t display_i2c_address;
     char display_i2c_device[MUSIC_BOX_NAME_LENGTH];
+    uint32_t display_volume_seconds;
+
+    bool volume_control_enabled;
+    uint8_t volume_cc;
+    char volume_mixer_card[MUSIC_BOX_NAME_LENGTH];
+    char volume_mixer_control[MUSIC_BOX_NAME_LENGTH];
 
     bool aec_enabled;
     size_t aec_taps;

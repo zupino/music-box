@@ -4,6 +4,7 @@
 #include "display.h"
 #include "midi.h"
 #include "rt_queue.h"
+#include "volume.h"
 
 #include <signal.h>
 #include <stdbool.h>
@@ -90,8 +91,12 @@ int main(int argc, char **argv)
     MusicBoxDisplay display;
     if (!music_box_display_init(&display, &config))
         fprintf(stderr, "Continuing without the beat display\n");
+    MusicBoxVolume volume;
+    if (!music_box_volume_init(&volume, &config))
+        fprintf(stderr, "Continuing without MIDI volume control\n");
     MusicBoxMidi midi;
-    if (!music_box_midi_start(&midi, &config, &commands)) {
+    if (!music_box_midi_start(&midi, &config, &commands, &volume)) {
+        music_box_volume_destroy(&volume);
         music_box_display_destroy(&display);
         music_box_audio_engine_destroy(&engine);
         return EXIT_FAILURE;
@@ -106,9 +111,17 @@ int main(int argc, char **argv)
            config.aec_enabled ? "enabled" : "disabled",
            config.aec_taps,
            config.aec_delay_frames);
+    if (music_box_volume_available(&volume))
+        printf("Volume: CC %u controls mixer '%s', currently %u%%\n",
+               (unsigned int)config.volume_cc,
+               music_box_volume_control_name(&volume),
+               (unsigned int)music_box_volume_percent(&volume));
+    else
+        printf("Volume: MIDI control disabled\n");
     fflush(stdout);
 
     unsigned int route_counter = 0u;
+    uint32_t volume_generation = music_box_volume_generation(&volume);
     while (keep_running && !music_box_audio_engine_jack_shutdown(&engine)) {
         if (route_counter == 0u) music_box_audio_engine_connect_ports(&engine);
         route_counter = (route_counter + 1u) % 10u;
@@ -117,11 +130,22 @@ int main(int argc, char **argv)
             print_event(&event, music_box_audio_engine_sample_rate(&engine));
             music_box_display_handle_event(&display, &event);
         }
+        /* Knob moves are coalesced here so one screen redraw covers a sweep. */
+        const uint32_t generation = music_box_volume_generation(&volume);
+        if (generation != volume_generation) {
+            volume_generation = generation;
+            const uint8_t percent = music_box_volume_percent(&volume);
+            printf("Volume: %u%%\n", (unsigned int)percent);
+            fflush(stdout);
+            music_box_display_show_volume(&display, percent);
+        }
+        music_box_display_tick(&display);
         const struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000000};
         nanosleep(&pause, NULL);
     }
 
     music_box_midi_stop(&midi);
+    music_box_volume_destroy(&volume);
     music_box_display_destroy(&display);
     music_box_audio_engine_destroy(&engine);
     return EXIT_SUCCESS;

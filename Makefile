@@ -16,14 +16,16 @@ SOURCES = \
 	src/echo_cancel.c \
 	src/audio_engine.c \
 	src/midi.c \
-	src/display.c
+	src/display.c \
+	src/volume.c
 OBJECTS = $(SOURCES:.c=.o)
 
 TEST_BINS = \
 	build/test_transport \
 	build/test_queue \
 	build/test_loop_bank \
-	build/test_echo_cancel
+	build/test_echo_cancel \
+	build/test_volume
 
 .PHONY: all clean install test
 
@@ -49,6 +51,9 @@ build/test_loop_bank: tests/test_loop_bank.c src/loop_bank.c src/transport.c src
 
 build/test_echo_cancel: tests/test_echo_cancel.c src/echo_cancel.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lm
+
+build/test_volume: tests/test_volume.c src/volume.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lasound
 
 test: $(TEST_BINS)
 	@for test_binary in $(TEST_BINS); do \

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 /* Only the glyphs used by the compact status screen are stored. */
@@ -32,9 +33,14 @@ static const Glyph font[] = {
     {'C', {0x3e, 0x41, 0x41, 0x41, 0x22}},
     {'D', {0x7f, 0x41, 0x41, 0x22, 0x1c}},
     {'E', {0x7f, 0x49, 0x49, 0x49, 0x41}},
+    {'L', {0x7f, 0x40, 0x40, 0x40, 0x40}},
     {'M', {0x7f, 0x02, 0x0c, 0x02, 0x7f}},
+    {'O', {0x3e, 0x41, 0x41, 0x41, 0x3e}},
     {'P', {0x7f, 0x09, 0x09, 0x09, 0x06}},
     {'R', {0x7f, 0x09, 0x19, 0x29, 0x46}},
+    {'U', {0x3f, 0x40, 0x40, 0x40, 0x3f}},
+    {'V', {0x1f, 0x20, 0x40, 0x20, 0x1f}},
+    {'%', {0x63, 0x13, 0x08, 0x64, 0x63}},
 };
 
 static void set_pixel(MusicBoxDisplay *display, unsigned int x,
@@ -87,6 +93,33 @@ static void draw_circle(MusicBoxDisplay *display, unsigned int center_x,
     }
 }
 
+static void fill_rectangle(MusicBoxDisplay *display, unsigned int x,
+                           unsigned int y, unsigned int width,
+                           unsigned int height)
+{
+    for (unsigned int column = 0u; column < width; ++column)
+        for (unsigned int row = 0u; row < height; ++row)
+            set_pixel(display, x + column, y + row);
+}
+
+static void draw_rectangle(MusicBoxDisplay *display, unsigned int x,
+                           unsigned int y, unsigned int width,
+                           unsigned int height)
+{
+    if (width == 0u || height == 0u) return;
+    fill_rectangle(display, x, y, width, 1u);
+    fill_rectangle(display, x, y + height - 1u, width, 1u);
+    fill_rectangle(display, x, y, 1u, height);
+    fill_rectangle(display, x + width - 1u, y, 1u, height);
+}
+
+static uint64_t monotonic_milliseconds(void)
+{
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_nsec / 1000000u;
+}
+
 static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
                        size_t count)
 {
@@ -102,10 +135,8 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
     return true;
 }
 
-static bool refresh(MusicBoxDisplay *display)
+static void draw_status_screen(MusicBoxDisplay *display)
 {
-    if (!display->enabled) return true;
-    memset(display->pixels, 0, sizeof(display->pixels));
     draw_note(display);
 
     char tempo[16];
@@ -121,6 +152,27 @@ static bool refresh(MusicBoxDisplay *display)
         char number[2] = {(char)('1' + beat), '\0'};
         draw_text(display, centers[beat] - 2u, 25u, number);
     }
+}
+
+/* Bar geometry: a 124x17 frame with a 120x13 fill area inside it. */
+static void draw_volume_screen(MusicBoxDisplay *display)
+{
+    const unsigned int percent = display->volume_percent;
+    char value[8];
+    (void)snprintf(value, sizeof(value), "%u%%", percent);
+    draw_text(display, 2u, 0u, "VOLUME");
+    draw_text(display, MUSIC_BOX_DISPLAY_WIDTH - 2u - (unsigned int)strlen(value) * 6u,
+              0u, value);
+    draw_rectangle(display, 2u, 13u, 124u, 17u);
+    fill_rectangle(display, 4u, 15u, (120u * percent + 50u) / 100u, 13u);
+}
+
+static bool refresh(MusicBoxDisplay *display)
+{
+    if (!display->enabled) return true;
+    memset(display->pixels, 0, sizeof(display->pixels));
+    if (display->volume_visible) draw_volume_screen(display);
+    else draw_status_screen(display);
 
     const uint8_t position[] = {0x21, 0x00, 0x7f, 0x22, 0x00, 0x03};
     return send_bytes(display->fd, 0x00u, position, sizeof(position)) &&
@@ -134,6 +186,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
     memset(display, 0, sizeof(*display));
     display->fd = -1;
     display->tempo_millibpm = config->tempo_millibpm;
+    display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
     if (!config->display_enabled) return true;
 
     display->fd = open(config->display_i2c_device, O_RDWR);
@@ -162,6 +215,13 @@ bool music_box_display_init(MusicBoxDisplay *display,
     return true;
 }
 
+static void commit(MusicBoxDisplay *display)
+{
+    if (refresh(display)) return;
+    fprintf(stderr, "Cannot update the display: %s\n", strerror(errno));
+    music_box_display_destroy(display);
+}
+
 void music_box_display_handle_event(MusicBoxDisplay *display,
                                     const MusicBoxEvent *event)
 {
@@ -187,10 +247,28 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     default:
         return;
     }
-    if (!refresh(display)) {
-        fprintf(stderr, "Cannot update beat display: %s\n", strerror(errno));
-        music_box_display_destroy(display);
-    }
+    /* The volume indication owns the screen until it times out. */
+    if (display->volume_visible) return;
+    commit(display);
+}
+
+void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent)
+{
+    if (!display->enabled) return;
+    display->volume_percent = percent > 100u ? 100u : percent;
+    if (display->volume_hold_milliseconds == 0u) return;
+    display->volume_visible = true;
+    display->volume_hide_at_milliseconds =
+        monotonic_milliseconds() + display->volume_hold_milliseconds;
+    commit(display);
+}
+
+void music_box_display_tick(MusicBoxDisplay *display)
+{
+    if (!display->enabled || !display->volume_visible) return;
+    if (monotonic_milliseconds() < display->volume_hide_at_milliseconds) return;
+    display->volume_visible = false;
+    commit(display);
 }
 
 void music_box_display_destroy(MusicBoxDisplay *display)

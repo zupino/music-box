@@ -108,6 +108,11 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->display_enabled = true;
     config->display_i2c_address = 0x3cu;
     strcpy(config->display_i2c_device, "/dev/i2c-1");
+    config->display_volume_seconds = 2u;
+    config->volume_control_enabled = true;
+    config->volume_cc = 3u;
+    strcpy(config->volume_mixer_card, "hw:wm8960soundcard");
+    strcpy(config->volume_mixer_control, "Speaker");
     config->aec_enabled = true;
     config->aec_taps = 128u;
     config->aec_delay_frames = 512u;
@@ -185,6 +190,18 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
             valid = errno == 0 && end != value && *trim(end) == '\0' &&
                     address >= 0x08u && address <= 0x77u;
             config->display_i2c_address = (uint8_t)address;
+        } else if (strcmp(key, "display_volume_seconds") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 60u;
+            config->display_volume_seconds = (uint32_t)unsigned_value;
+        } else if (strcmp(key, "volume_control_enabled") == 0) {
+            valid = parse_bool(value, &config->volume_control_enabled);
+        } else if (strcmp(key, "volume_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->volume_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "volume_mixer_card") == 0) {
+            valid = copy_name(config->volume_mixer_card, value);
+        } else if (strcmp(key, "volume_mixer_control") == 0) {
+            valid = copy_name(config->volume_mixer_control, value);
         } else if (strcmp(key, "aec_taps") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value >= 16u && unsigned_value <= 512u;
             config->aec_taps = (size_t)unsigned_value;

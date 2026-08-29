@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "rt_queue.h"
+#include "volume.h"
 
 #include <pthread.h>
 #include <stdatomic.h>
@@ -15,11 +16,13 @@ typedef struct {
     bool thread_started;
     MusicBoxConfig config;
     MusicBoxCommandQueue *commands;
+    MusicBoxVolume *volume;
 } MusicBoxMidi;
 
 bool music_box_midi_start(MusicBoxMidi *midi,
                           const MusicBoxConfig *config,
-                          MusicBoxCommandQueue *commands);
+                          MusicBoxCommandQueue *commands,
+                          MusicBoxVolume *volume);
 void music_box_midi_stop(MusicBoxMidi *midi);
 
 #endif

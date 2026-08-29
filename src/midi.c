@@ -28,6 +28,17 @@ static void queue_pad_command(MusicBoxMidi *midi, MusicBoxCommandType type, uint
         fprintf(stderr, "MIDI command queue full; event dropped\n");
 }
 
+/* The MIDI thread owns the mixer handle; ALSA control ioctls never touch the
+   JACK real-time thread. */
+static bool handle_volume_controller(MusicBoxMidi *midi, const snd_seq_event_t *event)
+{
+    if (event->type != SND_SEQ_EVENT_CONTROLLER) return false;
+    const unsigned int controller = event->data.control.param;
+    const int value = event->data.control.value;
+    if (controller > 127u || value < 0 || value > 127) return false;
+    return music_box_volume_handle_cc(midi->volume, (uint8_t)controller, (uint8_t)value);
+}
+
 static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_port, snd_seq_event_t *event)
 {
     const bool note_event = event->type == SND_SEQ_EVENT_NOTEON || event->type == SND_SEQ_EVENT_NOTEOFF;
@@ -38,6 +49,7 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
         return;
     }
+    if (handle_volume_controller(midi, event)) return;
     snd_seq_ev_set_source(event, (unsigned char)output_port);
     snd_seq_ev_set_subs(event);
     snd_seq_ev_set_direct(event);
@@ -121,11 +133,12 @@ static void *midi_thread(void *argument)
     return NULL;
 }
 
-bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config, MusicBoxCommandQueue *commands)
+bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config, MusicBoxCommandQueue *commands, MusicBoxVolume *volume)
 {
     memset(midi, 0, sizeof(*midi));
     midi->config = *config;
     midi->commands = commands;
+    midi->volume = volume;
     atomic_init(&midi->running, true);
     if (pthread_create(&midi->thread, NULL, midi_thread, midi) != 0) {
         fprintf(stderr, "Cannot create MIDI thread\n");
