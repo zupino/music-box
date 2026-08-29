@@ -127,6 +127,21 @@ volume_mixer_control=Speaker,Headphone
 display_volume_seconds=2
 ```
 
+`volume_db_curve` spreads the knob over the control's decibel range rather
+than its raw register range. On the WM8960 this matters a great deal: raw
+values below 48 are muted, so a proportional mapping wastes the first third of
+the travel in silence and crams everything from -73 dB to +6 dB into the top
+few percent. The curve is the normalized mapping `alsamixer` and `pavucontrol`
+present, and it falls back to proportional automatically for controls that
+report no decibel range.
+
+| Knob | Raw mapping | dB curve |
+|---|---|---|
+| 20% | muted | -31 dB |
+| 50% | -57 dB | -11 dB |
+| 80% | -19 dB | +0.5 dB |
+| 100% | +6 dB | +6 dB |
+
 `volume_mixer_control` is a comma-separated list, so one knob moves the speaker
 terminals and the 3.5 mm jack together; unknown names are skipped with a
 warning and a missing list falls back to the first playback control on the

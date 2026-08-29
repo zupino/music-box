@@ -19,11 +19,15 @@ typedef struct {
     snd_mixer_elem_t *element;
     long minimum;
     long maximum;
+    bool has_decibels;
+    long decibel_minimum;
+    long decibel_maximum;
     char name[MUSIC_BOX_NAME_LENGTH];
 } MusicBoxVolumeControl;
 
 typedef struct {
     bool available;
+    bool use_decibel_curve;
     uint8_t cc;
     snd_mixer_t *mixer;
     MusicBoxVolumeControl controls[MUSIC_BOX_VOLUME_CONTROL_LIMIT];
@@ -53,6 +57,15 @@ uint8_t music_box_volume_percent_for_cc(uint8_t value);
 long music_box_volume_raw_for_percent(long minimum, long maximum,
                                       uint8_t percent);
 uint8_t music_box_volume_percent_for_raw(long minimum, long maximum, long raw);
+/* Perceptual mapping onto a control's dB range, in hundredths of a decibel.
+   Mirrors the normalized curve alsamixer and pavucontrol present, so the knob
+   spends its travel where the change is audible instead of in the mute zone. */
+long music_box_volume_decibels_for_percent(long decibel_minimum,
+                                           long decibel_maximum,
+                                           uint8_t percent);
+uint8_t music_box_volume_percent_for_decibels(long decibel_minimum,
+                                              long decibel_maximum,
+                                              long decibels);
 /* Splits a comma-separated control list; returns the number of names stored. */
 size_t music_box_volume_split_controls(const char *text,
                                        char names[][MUSIC_BOX_NAME_LENGTH],

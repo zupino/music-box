@@ -25,6 +25,7 @@ typedef struct {
     uint32_t display_volume_seconds;
 
     bool volume_control_enabled;
+    bool volume_db_curve;
     uint8_t volume_cc;
     char volume_mixer_card[MUSIC_BOX_NAME_LENGTH];
     char volume_mixer_control[MUSIC_BOX_NAME_LENGTH];

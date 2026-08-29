@@ -3,8 +3,16 @@
 
 #include <alsa/asoundlib.h>
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
+
+/* Below this width a dB range is close enough to perceptually linear that the
+   plain proportional mapping is the better answer, as in alsa-utils. */
+#define LINEAR_DECIBEL_LIMIT 2400L
+/* Drivers report a mute floor as an absurd sentinel; clamp the curve to a
+   usable window so the knob does not spend its travel below audibility. */
+#define WIDEST_DECIBEL_WINDOW 10000L
 
 /* Tried in order when the configured list resolves to nothing. */
 static const char *const fallback_controls[] = {
@@ -34,6 +42,51 @@ uint8_t music_box_volume_percent_for_raw(long minimum, long maximum, long raw)
     if (offset < 0L) offset = 0L;
     if (offset > range) offset = range;
     return (uint8_t)((offset * 100L + range / 2L) / range);
+}
+
+static long clamped_decibel_minimum(long decibel_minimum, long decibel_maximum)
+{
+    const long floor_decibels = decibel_maximum - WIDEST_DECIBEL_WINDOW;
+    return decibel_minimum < floor_decibels ? floor_decibels : decibel_minimum;
+}
+
+long music_box_volume_decibels_for_percent(long decibel_minimum,
+                                           long decibel_maximum,
+                                           uint8_t percent)
+{
+    if (decibel_maximum <= decibel_minimum) return decibel_maximum;
+    if (percent > 100u) percent = 100u;
+    const long bottom = clamped_decibel_minimum(decibel_minimum, decibel_maximum);
+    const double fraction = (double)percent / 100.0;
+    if (decibel_maximum - bottom <= LINEAR_DECIBEL_LIMIT)
+        return bottom + lround(fraction * (double)(decibel_maximum - bottom));
+    const double bottom_normalized =
+        pow(10.0, (double)(bottom - decibel_maximum) / 6000.0);
+    const double normalized = fraction * (1.0 - bottom_normalized) + bottom_normalized;
+    return lround(6000.0 * log10(normalized)) + decibel_maximum;
+}
+
+uint8_t music_box_volume_percent_for_decibels(long decibel_minimum,
+                                              long decibel_maximum,
+                                              long decibels)
+{
+    if (decibel_maximum <= decibel_minimum) return 0u;
+    const long bottom = clamped_decibel_minimum(decibel_minimum, decibel_maximum);
+    if (decibels <= bottom) return 0u;
+    if (decibels >= decibel_maximum) return 100u;
+    double fraction;
+    if (decibel_maximum - bottom <= LINEAR_DECIBEL_LIMIT) {
+        fraction = (double)(decibels - bottom) / (double)(decibel_maximum - bottom);
+    } else {
+        const double bottom_normalized =
+            pow(10.0, (double)(bottom - decibel_maximum) / 6000.0);
+        const double normalized =
+            pow(10.0, (double)(decibels - decibel_maximum) / 6000.0);
+        fraction = (normalized - bottom_normalized) / (1.0 - bottom_normalized);
+    }
+    if (fraction < 0.0) fraction = 0.0;
+    if (fraction > 1.0) fraction = 1.0;
+    return (uint8_t)lround(fraction * 100.0);
 }
 
 size_t music_box_volume_split_controls(const char *text,
@@ -90,6 +143,10 @@ static bool append_control(MusicBoxVolume *volume, snd_mixer_elem_t *element)
         control->element = NULL;
         return false;
     }
+    control->has_decibels =
+        snd_mixer_selem_get_playback_dB_range(element, &control->decibel_minimum,
+                                              &control->decibel_maximum) == 0 &&
+        control->decibel_maximum > control->decibel_minimum;
     const char *name = snd_mixer_selem_get_name(element);
     (void)snprintf(control->name, sizeof(control->name), "%s",
                    name == NULL ? "unknown" : name);
@@ -180,19 +237,30 @@ bool music_box_volume_init(MusicBoxVolume *volume, const MusicBoxConfig *config)
     atomic_init(&volume->percent, 0u);
     atomic_init(&volume->generation, 0u);
     volume->cc = config->volume_cc;
+    volume->use_decibel_curve = config->volume_db_curve;
     if (!config->volume_control_enabled) return true;
     if (!open_mixer(volume, config)) {
         music_box_volume_destroy(volume);
         return false;
     }
-    long raw = 0L;
-    if (snd_mixer_selem_get_playback_volume(volume->controls[0].element,
-                                            SND_MIXER_SCHN_FRONT_LEFT, &raw) == 0)
+    const MusicBoxVolumeControl *first = &volume->controls[0];
+    long current = 0L;
+    if (first->has_decibels && volume->use_decibel_curve) {
+        if (snd_mixer_selem_get_playback_dB(first->element, SND_MIXER_SCHN_FRONT_LEFT,
+                                            &current) == 0)
+            atomic_store_explicit(&volume->percent,
+                                  music_box_volume_percent_for_decibels(
+                                      first->decibel_minimum, first->decibel_maximum,
+                                      current),
+                                  memory_order_relaxed);
+    } else if (snd_mixer_selem_get_playback_volume(first->element,
+                                                   SND_MIXER_SCHN_FRONT_LEFT,
+                                                   &current) == 0) {
         atomic_store_explicit(&volume->percent,
-                              music_box_volume_percent_for_raw(volume->controls[0].minimum,
-                                                               volume->controls[0].maximum,
-                                                               raw),
+                              music_box_volume_percent_for_raw(first->minimum,
+                                                               first->maximum, current),
                               memory_order_relaxed);
+    }
     volume->available = true;
     return true;
 }
@@ -222,9 +290,17 @@ bool music_box_volume_set_percent(MusicBoxVolume *volume, uint8_t percent)
     bool applied = false;
     for (size_t index = 0u; index < volume->control_count; ++index) {
         MusicBoxVolumeControl *control = &volume->controls[index];
-        const long raw = music_box_volume_raw_for_percent(control->minimum,
-                                                          control->maximum, percent);
-        const int result = snd_mixer_selem_set_playback_volume_all(control->element, raw);
+        int result;
+        if (control->has_decibels && volume->use_decibel_curve) {
+            const long decibels =
+                music_box_volume_decibels_for_percent(control->decibel_minimum,
+                                                      control->decibel_maximum, percent);
+            result = snd_mixer_selem_set_playback_dB_all(control->element, decibels, 0);
+        } else {
+            const long raw = music_box_volume_raw_for_percent(control->minimum,
+                                                              control->maximum, percent);
+            result = snd_mixer_selem_set_playback_volume_all(control->element, raw);
+        }
         if (result < 0) {
             fprintf(stderr, "Cannot set %s playback volume: %s\n", control->name,
                     snd_strerror(result));

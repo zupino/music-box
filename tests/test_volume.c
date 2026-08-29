@@ -74,12 +74,72 @@ static void test_control_list(void)
            MUSIC_BOX_VOLUME_CONTROL_LIMIT);
 }
 
+/* Measured on the Waveshare WM8960 HAT: raw 0-127, -73.00 dB to +6.00 dB. */
+#define WM8960_DB_MIN (-7300L)
+#define WM8960_DB_MAX 600L
+
+static void test_decibel_curve(void)
+{
+    assert(music_box_volume_decibels_for_percent(WM8960_DB_MIN, WM8960_DB_MAX, 0u) ==
+           WM8960_DB_MIN);
+    assert(music_box_volume_decibels_for_percent(WM8960_DB_MIN, WM8960_DB_MAX, 100u) ==
+           WM8960_DB_MAX);
+
+    /* Monotonic, and every step is a real change rather than a mute plateau. */
+    long previous = WM8960_DB_MIN - 1L;
+    for (unsigned int percent = 0u; percent <= 100u; ++percent) {
+        const long decibels = music_box_volume_decibels_for_percent(
+            WM8960_DB_MIN, WM8960_DB_MAX, (uint8_t)percent);
+        assert(decibels > previous);
+        assert(decibels >= WM8960_DB_MIN && decibels <= WM8960_DB_MAX);
+        previous = decibels;
+    }
+
+    /* The midpoint must land somewhere usable, not 50 dB down as the raw
+       register mapping did. */
+    const long middle = music_box_volume_decibels_for_percent(WM8960_DB_MIN,
+                                                              WM8960_DB_MAX, 50u);
+    assert(middle > -1500L && middle < -500L);
+
+    /* A narrow range stays proportional. */
+    assert(music_box_volume_decibels_for_percent(-1000L, 200L, 50u) == -400L);
+
+    /* A mute sentinel for the floor must not produce a degenerate curve. */
+    const long muted = music_box_volume_decibels_for_percent(-9999999L, 0L, 0u);
+    assert(muted == -10000L);
+    assert(music_box_volume_decibels_for_percent(-9999999L, 0L, 100u) == 0L);
+
+    assert(music_box_volume_decibels_for_percent(300L, 300L, 50u) == 300L);
+}
+
+static void test_decibel_round_trip(void)
+{
+    assert(music_box_volume_percent_for_decibels(WM8960_DB_MIN, WM8960_DB_MAX,
+                                                 WM8960_DB_MIN) == 0u);
+    assert(music_box_volume_percent_for_decibels(WM8960_DB_MIN, WM8960_DB_MAX,
+                                                 WM8960_DB_MAX) == 100u);
+    assert(music_box_volume_percent_for_decibels(WM8960_DB_MIN, WM8960_DB_MAX,
+                                                 -20000L) == 0u);
+    assert(music_box_volume_percent_for_decibels(WM8960_DB_MIN, WM8960_DB_MAX,
+                                                 9000L) == 100u);
+    assert(music_box_volume_percent_for_decibels(300L, 300L, 300L) == 0u);
+    for (unsigned int percent = 0u; percent <= 100u; ++percent) {
+        const long decibels = music_box_volume_decibels_for_percent(
+            WM8960_DB_MIN, WM8960_DB_MAX, (uint8_t)percent);
+        const uint8_t back = music_box_volume_percent_for_decibels(
+            WM8960_DB_MIN, WM8960_DB_MAX, decibels);
+        assert(back + 1u >= percent && back <= percent + 1u);
+    }
+}
+
 int main(void)
 {
     test_controller_mapping();
     test_raw_scaling();
     test_raw_to_percent();
     test_control_list();
+    test_decibel_curve();
+    test_decibel_round_trip();
     puts("volume tests passed");
     return 0;
 }

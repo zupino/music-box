@@ -218,3 +218,31 @@ knob apparently dead. Two stale caches were involved, in two layers.
 `music_box_volume_set_percent` now calls `snd_mixer_handle_events()` before
 writing. This is why `amixer` never shows the problem: it opens a fresh handle
 per invocation, so its cache is always freshly loaded.
+
+### The knob curve: raw register vs decibels
+`amixer -c wm8960soundcard sget 'Speaker'` on the test board reports
+`Limits: Playback 0 - 127`, with raw 95 at -26.00 dB and raw 126 at +5.00 dB:
+one decibel per step, 0 dB at raw 121, and everything below raw 48 muted.
+
+Mapping the knob proportionally onto 0-127 therefore produced a knob whose
+bottom 37% was silence and whose entire audible range lived in the last tenth
+of the travel. That, not a code fault, is why the maximum felt low and the
+knob felt unresponsive.
+
+| Knob | Raw mapping | dB curve |
+|---|---|---|
+| 20% | muted | -31 dB |
+| 50% | -57 dB | -11 dB |
+| 80% | -19 dB | +0.5 dB |
+
+`volume_db_curve=true` (default) now maps through
+`snd_mixer_selem_set_playback_dB_all` using the normalized curve from
+alsa-utils: proportional for ranges narrower than 24 dB, otherwise
+`6000 * log10(normalized) + dB_max`. A driver reporting a mute sentinel for its
+floor is clamped to a 100 dB window so the curve cannot degenerate.
+
+### Other gain stages on this card
+`scontrols` also lists `Playback` (the DAC digital volume), the
+`PCM Playback -6dB` switch, and `Left/Right Output Mixer PCM`. All sit ahead of
+`Speaker`/`Headphone` and none are touched by the knob. Check them before
+concluding the knob is at fault.
