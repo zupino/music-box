@@ -119,6 +119,9 @@ cat > /etc/security/limits.d/95-music-box.conf <<'LIMITS'
 LIMITS
 
 usermod -a -G audio "$MUSIC_BOX_USER"
+if getent group i2c > /dev/null 2>&1; then
+    usermod -a -G i2c "$MUSIC_BOX_USER"
+fi
 
 install_service() {
     local source=$1

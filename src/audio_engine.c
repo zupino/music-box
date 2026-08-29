@@ -23,6 +23,17 @@ static void emit_tempo_event(MusicBoxAudioEngine *engine)
     (void)music_box_event_queue_push(engine->events, &event);
 }
 
+static void emit_beat_event(MusicBoxAudioEngine *engine)
+{
+    const MusicBoxEvent event = {
+        .type = MUSIC_BOX_EVENT_BEAT,
+        .slot = (uint8_t)(engine->transport.beat_index %
+                          engine->transport.beats_per_bar),
+        .value = engine->transport.beat_index,
+    };
+    (void)music_box_event_queue_push(engine->events, &event);
+}
+
 static void process_commands(MusicBoxAudioEngine *engine)
 {
     MusicBoxCommand command;
@@ -56,6 +67,7 @@ static int audio_process(jack_nframes_t frame_count, void *argument)
 
     process_commands(engine);
     for (jack_nframes_t frame = 0u; frame < frame_count; ++frame) {
+        if (engine->transport.beat_boundary) emit_beat_event(engine);
         music_box_loop_bank_apply_boundary(&engine->loop_bank, &engine->transport);
         float loop_left = 0.0f;
         float loop_right = 0.0f;
