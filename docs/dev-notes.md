@@ -108,3 +108,87 @@ ls -la /dev/i2c*
 # Direct hardware write bypassing the service
 i2ctransfer -y 2 w2@0x3c 0x00 0xaf   # Display ON
 ```
+
+---
+
+## 2026-08-29 — MIDI volume knob
+
+### Goal
+Control the Raspberry Pi output volume from the MPD218 top-left knob and show
+the value on the OLED when it changes.
+
+### What was added
+- `src/volume.h`, `src/volume.c` — ALSA simple-mixer wrapper. Resolves a
+  comma-separated control list, scales a CC value onto each control's raw
+  range, unmutes non-zero settings, and publishes the result through two
+  atomics (`percent` plus a `generation` counter).
+- `src/midi.c` — `SND_SEQ_EVENT_CONTROLLER` matching `volume_cc` is consumed
+  instead of being forwarded to FluidSynth.
+- `src/display.c` — `VOLUME` screen with a percentage and a bar, shown for
+  `display_volume_seconds` and then replaced by the beat screen. Font gained
+  `L`, `O`, `U`, `V` and `%`.
+- `src/config.c` — `volume_control_enabled`, `volume_cc`, `volume_mixer_card`,
+  `volume_mixer_control`, `display_volume_seconds`.
+- `tests/test_volume.c` — CC/raw scaling and control-list parsing; no hardware.
+- `scripts/check-system.sh` — reports onboard `snd_bcm2835`, the boot config
+  audio lines, and the WM8960 `Speaker`/`Headphone`/`PCM` mixer state.
+
+### Threading
+The mixer handle is owned by the MIDI thread; ALSA control ioctls never run in
+the JACK callback. The main loop polls the generation counter at its existing
+100 ms tick, which coalesces a knob sweep into at most ten redraws — important
+because a full 128x32 frame is 512 bytes over I2C.
+
+### Why the knob writes the mixer on every event
+An earlier draft skipped the ioctl when the new percentage equalled the cached
+one. That is wrong: `alsactl`, `amixer` or the `wm8960-soundcard.service`
+state restore can move the hardware behind our back, after which a knob
+position that maps to the cached value silently does nothing. The cache now
+only gates the display refresh.
+
+### MPD218 controller numbers are preset-dependent
+`volume_cc=3` matches the common factory mapping for K1 in bank A but is not
+guaranteed. Verify with `aseqdump -p MPD218`. If a knob turns out to be an
+endless encoder sending relative increments (small value up, near-127 value
+down) rather than an absolute position, this absolute mapping will behave
+badly — jumping to 100% when turned down — and a relative mode would be needed.
+
+### Headphone jack and speakers are independent outputs
+The WM8960 drives the 3.5 mm jack and the speaker terminals from separate
+mixer controls, and the Waveshare driver does not auto-mute the speakers when
+a plug is inserted. `volume_mixer_control=Speaker,Headphone` moves both from
+one knob. A silent jack is normally a muted `Headphone` control or an output
+mixer switch in the restored ALSA state, not a routing bug:
+
+```bash
+amixer -c wm8960soundcard sget 'Headphone'
+amixer -c wm8960soundcard sset 'Headphone' 100% unmute
+amixer -c wm8960soundcard sset 'Left Output Mixer PCM' on
+amixer -c wm8960soundcard sset 'Right Output Mixer PCM' on
+systemctl cat wm8960-soundcard.service   # find the state file it restores
+sudo alsactl -f <state file> store wm8960soundcard
+```
+
+### Config keys must be appended on an existing device
+`install.sh` keeps an existing `/etc/music-box/music-box.conf`, so the new
+`volume_*` and `display_volume_seconds` keys are not written by a reinstall:
+
+```bash
+sudo tee -a /etc/music-box/music-box.conf <<'EOF'
+
+display_volume_seconds=2
+volume_control_enabled=true
+volume_cc=3
+volume_mixer_card=hw:wm8960soundcard
+volume_mixer_control=Speaker,Headphone
+EOF
+sudo systemctl restart music-box.service
+```
+
+The parser rejects unknown keys, so a config written by a newer build is not
+readable by an older binary; update the binary before the config.
+
+### Not verified on hardware
+Written without access to the test Pi. The ALSA-dependent translation unit was
+type-checked against a stub header only; mixer control names, the knob's
+actual CC number and the display layout all need a device check.

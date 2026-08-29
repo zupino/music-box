@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 static void test_controller_mapping(void)
 {
@@ -47,11 +48,38 @@ static void test_raw_to_percent(void)
     }
 }
 
+static void test_control_list(void)
+{
+    char names[MUSIC_BOX_VOLUME_CONTROL_LIMIT][MUSIC_BOX_NAME_LENGTH];
+    assert(music_box_volume_split_controls("Speaker", names,
+                                           MUSIC_BOX_VOLUME_CONTROL_LIMIT) == 1u);
+    assert(strcmp(names[0], "Speaker") == 0);
+
+    assert(music_box_volume_split_controls(" Speaker , Headphone ", names,
+                                           MUSIC_BOX_VOLUME_CONTROL_LIMIT) == 2u);
+    assert(strcmp(names[0], "Speaker") == 0);
+    assert(strcmp(names[1], "Headphone") == 0);
+
+    /* Control names may contain spaces, and empty fields are skipped. */
+    assert(music_box_volume_split_controls("Speaker,,Line Out", names,
+                                           MUSIC_BOX_VOLUME_CONTROL_LIMIT) == 2u);
+    assert(strcmp(names[1], "Line Out") == 0);
+
+    assert(music_box_volume_split_controls("", names,
+                                           MUSIC_BOX_VOLUME_CONTROL_LIMIT) == 0u);
+    assert(music_box_volume_split_controls("  ", names,
+                                           MUSIC_BOX_VOLUME_CONTROL_LIMIT) == 0u);
+    assert(music_box_volume_split_controls("a,b,c,d,e,f", names,
+                                           MUSIC_BOX_VOLUME_CONTROL_LIMIT) ==
+           MUSIC_BOX_VOLUME_CONTROL_LIMIT);
+}
+
 int main(void)
 {
     test_controller_mapping();
     test_raw_scaling();
     test_raw_to_percent();
+    test_control_list();
     puts("volume tests passed");
     return 0;
 }

@@ -112,7 +112,7 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->volume_control_enabled = true;
     config->volume_cc = 3u;
     strcpy(config->volume_mixer_card, "hw:wm8960soundcard");
-    strcpy(config->volume_mixer_control, "Speaker");
+    strcpy(config->volume_mixer_control, "Speaker,Headphone");
     config->aec_enabled = true;
     config->aec_taps = 128u;
     config->aec_delay_frames = 512u;
