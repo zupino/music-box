@@ -13,6 +13,8 @@ Environment=HOME=@MUSIC_BOX_HOME@
 ExecStart=/usr/local/bin/music-box --config /etc/music-box/music-box.conf
 Restart=on-failure
 RestartSec=3
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=multi-user.target
