@@ -192,3 +192,12 @@ readable by an older binary; update the binary before the config.
 Written without access to the test Pi. The ALSA-dependent translation unit was
 type-checked against a stub header only; mixer control names, the knob's
 actual CC number and the display layout all need a device check.
+
+### There is no "louder than 100%" in ALSA
+100% is the top of a control's raw register range, and
+`music_box_volume_raw_for_percent(min, max, 100)` returns `max` exactly, so the
+knob does reach the hardware maximum. Memories of pushing past 100% usually
+come from PulseAudio, which applies software gain above unity and is not
+present here (JACK owns the card exclusively). On the WM8960 the only
+above-unity stage is the class-D boost, `Speaker DC` / `Speaker AC`, six steps
+of roughly 1.0x to 1.7x, which no Music Box code touches.

@@ -131,8 +131,10 @@ display_volume_seconds=2
 terminals and the 3.5 mm jack together; unknown names are skipped with a
 warning and a missing list falls back to the first playback control on the
 card. Setting a non-zero volume also unmutes each listed output, because a
-stored ALSA state can otherwise leave the jack silent. Percentages match
-`alsamixer`, and `display_volume_seconds=0` keeps the beat screen visible.
+stored ALSA state can otherwise leave the jack silent. A percentage is a
+position in the control's raw register range, the same scale `amixer sset
+'Speaker' 70%` uses, so full clockwise is the control's true maximum.
+`display_volume_seconds=0` keeps the beat screen visible.
 
 Factory MPD218 presets vary. Confirm the controller number the knob sends
 before trusting the default:
@@ -229,6 +231,23 @@ speaker amplifier: check `PCM` and the output mixer switches with `amixer -c
 wm8960soundcard scontrols` before concluding that the knob is the limit.
 Because the codec register is dB-scaled, the lower half of the knob travel is
 nearly inaudible; this is the hardware curve, not the mapping.
+
+There is no volume above 100%: for an ALSA control, 100% *is* the top of its
+raw register range, and the knob reaches it exactly. The one place the WM8960
+offers above-unity gain is the class-D amplifier boost, exposed as the separate
+`Speaker DC` and `Speaker AC` controls (six steps, roughly 1.0x to 1.7x). They
+are not part of the ordinary volume control and are left at whatever the stored
+ALSA state holds:
+
+```bash
+amixer -c wm8960soundcard sget 'Speaker DC'
+amixer -c wm8960soundcard sset 'Speaker DC' 5
+amixer -c wm8960soundcard sset 'Speaker AC' 5
+sudo alsactl -f /etc/wm8960-soundcard/wm8960_asound.state store wm8960soundcard
+```
+
+Boost drives the amplifier harder and increases distortion and speaker load, so
+raise the digital gains first and treat this as the last resort.
 
 ## Documentation
 
