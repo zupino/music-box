@@ -212,6 +212,13 @@ bool music_box_volume_set_percent(MusicBoxVolume *volume, uint8_t percent)
 {
     if (volume == NULL || !volume->available) return false;
     if (percent > 100u) percent = 100u;
+    /* alsa-lib caches element values on a long-lived handle and silently skips
+       a write that matches its cache. Without draining the change events an
+       external alsamixer or alsactl leaves that cache stale, and every knob
+       position we had already written becomes a no-op at the hardware. */
+    const int pending = snd_mixer_handle_events(volume->mixer);
+    if (pending < 0)
+        fprintf(stderr, "Cannot refresh mixer state: %s\n", snd_strerror(pending));
     bool applied = false;
     for (size_t index = 0u; index < volume->control_count; ++index) {
         MusicBoxVolumeControl *control = &volume->controls[index];

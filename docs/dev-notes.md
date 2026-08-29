@@ -201,3 +201,20 @@ come from PulseAudio, which applies software gain above unity and is not
 present here (JACK owns the card exclusively). On the WM8960 the only
 above-unity stage is the class-D boost, `Speaker DC` / `Speaker AC`, six steps
 of roughly 1.0x to 1.7x, which no Music Box code touches.
+
+### The knob stops working after alsamixer touches the same control
+Reported on the device: raising the volume by hand in `alsamixer` left the
+knob apparently dead. Two stale caches were involved, in two layers.
+
+1. Ours: `handle_cc` skipped the ioctl when the new percentage matched the
+   last one we had written. Removed; the cache now only gates the display.
+2. alsa-lib's: the simple mixer keeps per-element values on the `snd_mixer_t`
+   handle and returns success *without writing* when the requested value
+   matches that cache. It is refreshed only by `snd_mixer_handle_events()`.
+   Music Box holds one handle for the process lifetime, so an external
+   `alsamixer` or `alsactl restore` desynchronised it permanently, and every
+   knob position already written once became a silent no-op.
+
+`music_box_volume_set_percent` now calls `snd_mixer_handle_events()` before
+writing. This is why `amixer` never shows the problem: it opens a fresh handle
+per invocation, so its cache is always freshly loaded.
