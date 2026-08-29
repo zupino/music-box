@@ -246,3 +246,44 @@ floor is clamped to a 100 dB window so the curve cannot degenerate.
 `PCM Playback -6dB` switch, and `Left/Right Output Mixer PCM`. All sit ahead of
 `Speaker`/`Headphone` and none are touched by the knob. Check them before
 concluding the knob is at fault.
+
+### Mixer inventory of the test board (2026-08-29)
+`cat /proc/asound/cards` before disabling the onboard devices:
+
+```text
+ 0 [Headphones     ]: bcm2835_headpho - bcm2835 Headphones
+ 1 [wm8960soundcard]: simple-card - wm8960-soundcard
+ 2 [MPD218         ]: USB-Audio - MPD218
+ 3 [vc4hdmi        ]: vc4-hdmi - vc4-hdmi
+```
+
+The MPD218 registers as a USB audio card as well as a MIDI device. Nothing in
+Music Box uses card indices, but four cards make `aplay`/`amixer` output harder
+to read, which is reason enough to disable the onboard pair.
+
+Playback controls with a volume on this driver revision: `Headphone`,
+`Speaker`, `Speaker AC`, `Speaker DC`, `Playback` (DAC), `Capture`, `ADC PCM`.
+Relevant switches: `PCM Playback -6dB`, `Left/Right Output Mixer PCM`,
+`Headphone/Speaker Playback ZC`. So `volume_mixer_control=Speaker,Headphone`
+resolves on this board, and the startup banner should read
+`'Speaker+Headphone'`.
+
+### The two outputs can drift far apart
+As found, `Headphone` sat at raw 126 (+5 dB) while `Speaker` sat at raw 95
+(-26 dB): a 31 dB gap, because only `Speaker` had been under knob control and
+`Headphone` kept whatever the stored ALSA state held. Driving both from one
+knob synchronises them on the first move, so the speakers jump loudly if the
+knob is parked high. Start the knob low after this change.
+
+### Sequence of volume defects found on hardware, in order
+1. Only `Speaker` was driven, so the 3.5 mm jack ignored the knob entirely.
+2. Our own percentage cache skipped writes, so a knob position already used
+   once became a no-op.
+3. alsa-lib's per-element cache did the same thing one layer lower, which is
+   what made the knob look permanently dead after `alsamixer` touched the
+   control; fixed with `snd_mixer_handle_events()`.
+4. The proportional raw mapping put 37% of the travel in the mute zone and 0 dB
+   at 95% of travel, which is what made the maximum feel low.
+
+Only the fourth was a design error rather than a bug; together they explain
+every symptom reported from the device.
