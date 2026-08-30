@@ -183,9 +183,13 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
     if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
         !music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode,
-                                  MUSIC_BOX_MODE_LOOP, events) ||
-        !music_box_loop_bank_init(&engine->sampler_bank, sample_rate, config->max_sample_seconds, config->quantize_mode,
-                                  MUSIC_BOX_MODE_SAMPLER, events) ||
+                                  MUSIC_BOX_MODE_LOOP, 0u, events) ||
+        /* A sample is never quantized: it lasts exactly as long as its pad was
+           held, so it captures a spoken word or a hit rather than a bar. The
+           pre-roll covers the hold that precedes the recording gesture. */
+        !music_box_loop_bank_init(&engine->sampler_bank, sample_rate, config->max_sample_seconds,
+                                  MUSIC_BOX_QUANTIZE_OFF, MUSIC_BOX_MODE_SAMPLER,
+                                  config->pad_hold_milliseconds, events) ||
         !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
                                     config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio)) {
         fprintf(stderr, "Cannot initialize the audio engine buffers\n");

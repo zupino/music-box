@@ -38,8 +38,10 @@ This page summarises the capabilities currently implemented on the main developm
 ### Sampler
 
 - every pad records a one-shot, pad-associated sample;
-- a hold past a configurable threshold arms a recording;
-- recording start and finish use the same quantization as loops;
+- a hold past a configurable threshold starts a recording;
+- recording is never quantized: a sample spans exactly press to release;
+- a rolling pre-roll recovers the head of the take, which elapses before the
+  hold is recognised;
 - a finished sample stays silent until its pad is tapped;
 - a tap plays the sample once from its start and stops at its end;
 - a tap during playback restarts the sample;
@@ -51,7 +53,7 @@ This page summarises the capabilities currently implemented on the main developm
 - one sample-accurate transport shared by all loop slots;
 - configurable BPM;
 - configurable beats per bar;
-- quantization modes: off, beat, or bar;
+- quantization modes: off, beat, or bar, applied to loop mode;
 - quantized record start;
 - quantized record finish;
 - quantized loop stop;

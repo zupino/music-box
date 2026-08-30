@@ -84,15 +84,22 @@ A quick press/release before recording starts creates one complete quantization 
 
 ### Sampler mode
 
-Every pad is a one-shot recorder. Nothing repeats on its own.
+Every pad is a one-shot recorder. Nothing repeats on its own, and nothing is
+quantized: a sample lasts exactly as long as its pad was held.
 
-1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording is
-   armed exactly as in loop mode, and starts on the next boundary.
-2. Release: the recording closes on the following boundary and stays with that
-   pad, silent.
+1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
+   from the moment of the press, with no wait for a beat or bar.
+2. Release: the recording closes immediately and stays with that pad, silent.
 3. Tap the pad: the sample plays once, from its start, and stops at its end.
    Tapping again while it plays restarts it.
 4. Hold the pad again: a new recording replaces the sample.
+
+Step 1 captures the head of the sample even though the press only becomes a
+recording gesture 400 ms later: the sampler keeps a rolling pre-roll of the last
+`pad_hold_milliseconds` of input and lays it down as the start of the take. A
+sample therefore spans press to release, which is what you want for a word, a
+hit or a short phrase, rather than the whole bar `quantize` would round it up
+to. Loop mode is unaffected and still follows `quantize`.
 
 The two modes own separate banks of four slots, so a sample never overwrites a
 loop. Loops recorded in loop mode keep playing while sampler pads are used, and
@@ -140,10 +147,12 @@ pad_hold_milliseconds=400
 `max_sample_seconds` allocates four more stereo buffers of that length at
 startup, on top of the four `max_loop_seconds` loop buffers, so raise it with
 the Raspberry Pi's memory in mind. `pad_hold_milliseconds` is the line between
-triggering a sample and recording a new one; the hold is timed on the MIDI
-thread at 5 ms resolution, while the recording itself still starts on an exact
-transport boundary. Setting `mode_control_enabled=false` pins the box to loop
-mode.
+triggering a sample and recording a new one, and it also sizes the pre-roll, so
+lowering it makes the gesture snappier while raising it costs a little more
+memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
+`mode_control_enabled=false` pins the box to loop mode.
+
+`quantize` applies to loop mode only. Sampler recording is always unquantized.
 
 Factory MPD218 presets vary here too. Confirm which controller knob 2 sends
 with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.

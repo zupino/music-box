@@ -31,13 +31,39 @@ static void stop_one_shot(MusicBoxLoopBank *bank, uint8_t slot_index)
     emit_event(bank, MUSIC_BOX_EVENT_SAMPLE_FINISHED, slot_index, 0u);
 }
 
+/*
+ * Lays the pre-roll ring down as the head of a new recording, oldest frame
+ * first, so the take starts where the pad went down rather than where the hold
+ * was recognised. Two copies at most, one per side of the ring's wrap point.
+ */
+static size_t copy_preroll(MusicBoxLoopBank *bank, MusicBoxLoopSlot *slot)
+{
+    size_t frames = bank->preroll_filled;
+    if (frames == 0u) return 0u;
+    if (frames > slot->capacity_frames) frames = slot->capacity_frames;
+
+    /* The oldest of the retained frames, walking back from the write cursor. */
+    const size_t start = (bank->preroll_position + bank->preroll_capacity - frames) %
+                         bank->preroll_capacity;
+    const size_t until_wrap = bank->preroll_capacity - start;
+    const size_t first = frames < until_wrap ? frames : until_wrap;
+
+    memcpy(slot->left, bank->preroll_left + start, first * sizeof(float));
+    memcpy(slot->right, bank->preroll_right + start, first * sizeof(float));
+    if (frames > first) {
+        memcpy(slot->left + first, bank->preroll_left, (frames - first) * sizeof(float));
+        memcpy(slot->right + first, bank->preroll_right, (frames - first) * sizeof(float));
+    }
+    return frames;
+}
+
 static void start_recording(MusicBoxLoopBank *bank,
                             uint8_t slot_index,
                             const MusicBoxTransport *transport)
 {
     MusicBoxLoopSlot *slot = &bank->slots[slot_index];
 
-    slot->recorded_frames = 0u;
+    slot->recorded_frames = copy_preroll(bank, slot);
     slot->play_position = 0u;
     slot->record_start_frame = transport->frame_position;
     slot->state = MUSIC_BOX_LOOP_RECORDING;
@@ -73,6 +99,7 @@ bool music_box_loop_bank_init(MusicBoxLoopBank *bank,
                               uint32_t max_seconds,
                               MusicBoxQuantizeMode quantize_mode,
                               MusicBoxMode mode,
+                              uint32_t preroll_milliseconds,
                               MusicBoxEventQueue *events)
 {
     if (bank == NULL || sample_rate == 0u || max_seconds == 0u) {
@@ -86,6 +113,20 @@ bool music_box_loop_bank_init(MusicBoxLoopBank *bank,
 
     const size_t capacity =
         (size_t)sample_rate * (size_t)max_seconds;
+
+    if (preroll_milliseconds > 0u) {
+        size_t preroll = ((size_t)sample_rate * (size_t)preroll_milliseconds) / 1000u;
+        if (preroll > capacity) preroll = capacity;
+        if (preroll > 0u) {
+            bank->preroll_left = calloc(preroll, sizeof(float));
+            bank->preroll_right = calloc(preroll, sizeof(float));
+            bank->preroll_capacity = preroll;
+            if (bank->preroll_left == NULL || bank->preroll_right == NULL) {
+                music_box_loop_bank_destroy(bank);
+                return false;
+            }
+        }
+    }
 
     for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
         MusicBoxLoopSlot *slot = &bank->slots[index];
@@ -115,6 +156,14 @@ void music_box_loop_bank_destroy(MusicBoxLoopBank *bank)
         bank->slots[index].left = NULL;
         bank->slots[index].right = NULL;
     }
+
+    free(bank->preroll_left);
+    free(bank->preroll_right);
+    bank->preroll_left = NULL;
+    bank->preroll_right = NULL;
+    bank->preroll_capacity = 0u;
+    bank->preroll_filled = 0u;
+    bank->preroll_position = 0u;
 }
 
 static void arm_recording(MusicBoxLoopBank *bank,
@@ -356,6 +405,15 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
     *right = mixed_right;
 }
 
+static void push_preroll(MusicBoxLoopBank *bank, float left, float right)
+{
+    if (bank->preroll_capacity == 0u) return;
+    bank->preroll_left[bank->preroll_position] = left;
+    bank->preroll_right[bank->preroll_position] = right;
+    bank->preroll_position = (bank->preroll_position + 1u) % bank->preroll_capacity;
+    if (bank->preroll_filled < bank->preroll_capacity) bank->preroll_filled++;
+}
+
 void music_box_loop_bank_record_sample(MusicBoxLoopBank *bank,
                                        float left,
                                        float right)
@@ -380,4 +438,8 @@ void music_box_loop_bank_record_sample(MusicBoxLoopBank *bank,
         slot->right[slot->recorded_frames] = right;
         slot->recorded_frames++;
     }
+
+    /* Written after the slots so a take started this block does not repeat the
+       frame the pre-roll copy already placed at its head. */
+    push_preroll(bank, left, right);
 }

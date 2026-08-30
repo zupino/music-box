@@ -362,6 +362,34 @@ Rendering was checked by compiling `display.c` into a throwaway harness that
 dumps the framebuffer as ASCII. Worth repeating for any layout change — it
 catches overlap and clipping without the hardware.
 
+### Sampler recording is never quantized
+First correction after the feature was written, before any device test. The
+sampler bank had inherited the configured `quantize`, which is wrong for what a
+sample is: rounding a spoken word or a hit up to a whole bar defeats the point.
+A sampler bank is now always built with `MUSIC_BOX_QUANTIZE_OFF`, so it reuses
+the state machine's existing unquantized paths and never reaches
+`ARMED_RECORD` or `ARMED_FINISH`. Loop mode still follows `quantize`.
+
+That exposed a gap the quantized version had hidden. A sample has to run from
+the press, but a press cannot start a recording, because a short press is how a
+sample is triggered. The gesture is only known to be a recording once the pad
+has been held for `pad_hold_milliseconds`, and by then the first 400 ms of the
+take have gone past. Losing 400 ms of head removes the attack of most things
+worth sampling, so it is not an acceptable rounding error.
+
+The fix is a pre-roll: a ring of the last `pad_hold_milliseconds` of cleaned
+input, per sampler bank, written on every frame and copied into the slot as the
+head of the take when recording starts. Cost is one bounded `memcpy` per
+recording inside the audio callback, about 154 kB at 48 kHz for the 400 ms
+default. At a 256-frame period that is roughly 3% of one JACK cycle, once,
+which is acceptable; a per-slot capture buffer with a pointer swap would avoid
+even that, at the price of doubling sampler memory.
+
+The pre-roll length is the configured hold rather than the true press-to-hold
+interval, which the MIDI thread knows exactly. The difference is bounded by the
+5 ms poll, so the head can be up to 5 ms short. Not worth a wider command
+struct.
+
 ### Config on an existing device
 Unlike the volume session, nothing has to be appended for the feature to work:
 the four new keys all have defaults, and a config written before this change is
@@ -385,5 +413,6 @@ config.
 
 ### Not verified on hardware
 Written without access to the test Pi. Knob 2's actual controller number, the
-readability of the boxes at 128x32, and whether 400 ms is a comfortable hold
-threshold all need a device check.
+readability of the boxes at 128x32, whether 400 ms is a comfortable hold
+threshold, and whether the pre-roll head sounds right in a live take all need a
+device check.

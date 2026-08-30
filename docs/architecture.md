@@ -111,7 +111,7 @@ end note
 | `midi.c` | ALSA sequencer ports, MPD discovery and MIDI forwarding |
 | `audio_engine.c` | JACK callback, signal routing, mode routing and final mixer |
 | `transport.c` | Drift-free sample/beat/bar clock |
-| `loop_bank.c` | One bank of four stereo buffers and their slot state machines; instantiated twice, once per mode |
+| `loop_bank.c` | One bank of four stereo buffers, their slot state machines and, for the sampler, a pre-roll ring; instantiated twice, once per mode |
 | `echo_cancel.c` | Built-in two-reference/two-microphone NLMS AEC |
 | `rt_queue.c` | Lock-free SPSC command and status queues |
 | `volume.c` | ALSA simple-mixer hardware output volume driven by a MIDI knob |
@@ -146,6 +146,7 @@ The JACK callback is the only code allowed to mutate transport, slot buffers, sl
 | Source | Sampler slots 1-4 | Previously recorded stereo playback, one shot per tap |
 | Processor | Echo canceller | Removes an estimate of speaker bleed from microphone capture |
 | Processor | Quantized recorder | Writes cleaned microphone samples into an armed slot of either bank |
+| Internal sink/source | Sampler pre-roll | Rolling ring of the most recent cleaned input, laid down as the head of a sampler take |
 | Processor | Loop bank | Plays active loop slots phase-locked to their own stored length |
 | Processor | Sampler bank | Plays triggered sampler slots once and stops them at their stored length |
 | Processor | Stereo mixer | Sums synth, loop and sample playback |
@@ -340,10 +341,28 @@ things: which gesture arms a recording, and what a finished recording does.
 
 | | Loop bank | Sampler bank |
 |---|---|---|
-| Arms a recording | pad press on an idle slot | pad hold past the threshold |
+| Starts a recording | pad press on an idle slot | pad hold past the threshold |
+| Quantization | `quantize`: off, beat or bar | always off |
+| Recorded interval | boundary to boundary | press to release |
 | Pad press on a slot holding audio | arms a stop | plays it once from the start |
 | A closed recording | starts repeating immediately | waits silently for a tap |
 | End of the stored audio | wraps to frame zero | stops and returns to STOPPED |
+
+A sampler bank is built with `MUSIC_BOX_QUANTIZE_OFF` regardless of the
+configured `quantize`, so it reuses the state machine's existing unquantized
+paths and never enters `ARMED_RECORD` or `ARMED_FINISH`. Rounding a sample up to
+a bar would defeat the point of it: a sample is a word or a hit, and it has to
+last exactly as long as the pad was held.
+
+That creates one problem, which the pre-roll solves. A press cannot start a
+recording, because a short press is how a sample is triggered; the gesture is
+only known to be a recording once the pad has been held for
+`pad_hold_milliseconds`, by which time the head of the take has gone past. So a
+sampler bank keeps a ring of the last `pad_hold_milliseconds` of cleaned input,
+written on every frame, and copies it into the slot as the head of the take when
+recording starts. The take then runs from the press, and costs one bounded
+`memcpy` per recording in the audio callback: 400 ms of stereo float at 48 kHz
+is about 154 kB.
 
 The engine records which bank each pad was pressed on and routes that pad's hold
 and release to the same bank. A mode change while a pad is down therefore cannot
@@ -397,27 +416,31 @@ skinparam shadowing false
 
 [*] --> EMPTY
 
-EMPTY --> ARMED_RECORD : pad hold\nquantization enabled
-EMPTY --> RECORDING : pad hold\nquantization off
-STOPPED --> ARMED_RECORD : pad hold\nquantization enabled
-STOPPED --> RECORDING : pad hold\nquantization off
+EMPTY --> RECORDING : pad hold\nprefill from the pre-roll
+STOPPED --> RECORDING : pad hold\nprefill from the pre-roll
 
-ARMED_RECORD --> RECORDING : next beat/bar boundary
-RECORDING --> ARMED_FINISH : pad release\nquantization enabled
+RECORDING --> STOPPED : pad release\nclose the take, stay silent
 RECORDING --> STOPPED : maximum sample length reached
-
-ARMED_FINISH --> STOPPED : next beat/bar boundary\nclose recording, stay silent
 
 STOPPED --> ONE_SHOT : pad press\nplay from frame 0
 ONE_SHOT --> ONE_SHOT : pad press\nretrigger from frame 0
 ONE_SHOT --> STOPPED : end of stored audio
-ONE_SHOT --> ARMED_RECORD : pad hold\ncancel playback and re-record
+ONE_SHOT --> RECORDING : pad hold\ncancel playback and re-record
+
+note right of RECORDING
+Never quantized. The take starts at the press,
+not at the hold that recognises it, because the
+pre-roll ring supplies the frames in between.
+
+ARMED_RECORD and ARMED_FINISH are unreachable
+here: a sampler bank is always built with
+quantization off.
+end note
 
 note right of ONE_SHOT
 A pad press starts the sample immediately, so
 holding a loaded pad to re-record plays a short
-preview first. The preview is cut at the hold,
-before the quantized record boundary.
+preview first. The preview is cut at the hold.
 end note
 @enduml
 ```

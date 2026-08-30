@@ -32,7 +32,7 @@ static void test_loop_mode(void)
     assert(music_box_transport_init(&transport, 100u, 60000u, 4u));
     MusicBoxLoopBank bank;
     assert(music_box_loop_bank_init(&bank, 100u, 10u, MUSIC_BOX_QUANTIZE_BAR,
-                                    MUSIC_BOX_MODE_LOOP, &events));
+                                    MUSIC_BOX_MODE_LOOP, 0u, &events));
     for (unsigned int frame = 0u; frame < 10u; ++frame) process_frame(&bank, &transport, 0.25f);
     music_box_loop_bank_pad_press(&bank, 0u, &transport);
     music_box_loop_bank_pad_release(&bank, 0u, &transport);
@@ -54,6 +54,11 @@ static void test_loop_mode(void)
     music_box_loop_bank_destroy(&bank);
 }
 
+/*
+ * The sampler records unquantized, so a take runs from the press to the
+ * release. The bank is built with a 100 ms pre-roll, which at 100 Hz is the
+ * ten frames that separate the press from the hold below.
+ */
 static void test_sampler_mode(void)
 {
     MusicBoxEventQueue events;
@@ -61,9 +66,9 @@ static void test_sampler_mode(void)
     MusicBoxTransport transport;
     assert(music_box_transport_init(&transport, 100u, 60000u, 4u));
     MusicBoxLoopBank bank;
-    assert(music_box_loop_bank_init(&bank, 100u, 10u, MUSIC_BOX_QUANTIZE_BAR,
-                                    MUSIC_BOX_MODE_SAMPLER, &events));
-    for (unsigned int frame = 0u; frame < 10u; ++frame) process_frame(&bank, &transport, 0.5f);
+    assert(music_box_loop_bank_init(&bank, 100u, 10u, MUSIC_BOX_QUANTIZE_OFF,
+                                    MUSIC_BOX_MODE_SAMPLER, 100u, &events));
+    assert(bank.preroll_capacity == 10u);
 
     /* A press on an empty pad is a trigger, not the start of a recording. */
     music_box_loop_bank_pad_press(&bank, 1u, &transport);
@@ -71,17 +76,21 @@ static void test_sampler_mode(void)
     music_box_loop_bank_pad_release(&bank, 1u, &transport);
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_EMPTY);
 
-    music_box_loop_bank_pad_hold(&bank, 1u, &transport);
-    assert(bank.slots[1].state == MUSIC_BOX_LOOP_ARMED_RECORD);
-    music_box_loop_bank_pad_release(&bank, 1u, &transport);
-    assert(bank.slots[1].finish_after_start);
-    run_to_frame(&bank, &transport, 400u, 0.5f);
-    assert(bank.slots[1].state == MUSIC_BOX_LOOP_RECORDING);
-    run_to_frame(&bank, &transport, 800u, 0.5f);
+    /* Ten frames of the pad being down before the hold is recognised. */
+    music_box_loop_bank_pad_press(&bank, 1u, &transport);
+    for (unsigned int frame = 0u; frame < 10u; ++frame) process_frame(&bank, &transport, 0.25f);
+    assert(bank.preroll_filled == 10u);
 
-    /* A finished sample stays silent until its pad is tapped. */
+    music_box_loop_bank_pad_hold(&bank, 1u, &transport);
+    /* No boundary is waited for, and the pre-roll is already in the slot. */
+    assert(bank.slots[1].state == MUSIC_BOX_LOOP_RECORDING);
+    assert(bank.slots[1].recorded_frames == 10u);
+    for (unsigned int frame = 0u; frame < 30u; ++frame) process_frame(&bank, &transport, 0.5f);
+
+    music_box_loop_bank_pad_release(&bank, 1u, &transport);
+    /* The take closes on the release and stays silent until its pad is tapped. */
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_STOPPED);
-    assert(bank.slots[1].recorded_frames == 400u);
+    assert(bank.slots[1].recorded_frames == 40u);
     float left = 0.0f;
     float right = 0.0f;
     music_box_loop_bank_mix_sample(&bank, &left, &right);
@@ -91,14 +100,19 @@ static void test_sampler_mode(void)
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_ONE_SHOT);
     music_box_loop_bank_pad_release(&bank, 1u, &transport);
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_ONE_SHOT);
-    for (unsigned int frame = 0u; frame < 399u; ++frame)
+
+    /* The head is the pre-roll captured before the hold, the tail the rest. */
+    music_box_loop_bank_mix_sample(&bank, &left, &right);
+    assert(fabsf(left - 0.25f) < 1.0e-6f);
+    assert(fabsf(right + 0.25f) < 1.0e-6f);
+    for (unsigned int frame = 1u; frame < 10u; ++frame)
+        music_box_loop_bank_mix_sample(&bank, &left, &right);
+    assert(fabsf(left - 0.25f) < 1.0e-6f);
+    for (unsigned int frame = 10u; frame < 40u; ++frame)
         music_box_loop_bank_mix_sample(&bank, &left, &right);
     assert(fabsf(left - 0.5f) < 1.0e-6f);
-    assert(fabsf(right + 0.5f) < 1.0e-6f);
-    assert(bank.slots[1].state == MUSIC_BOX_LOOP_ONE_SHOT);
 
     /* The sample stops at its own tail instead of wrapping like a loop. */
-    music_box_loop_bank_mix_sample(&bank, &left, &right);
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_STOPPED);
     music_box_loop_bank_mix_sample(&bank, &left, &right);
     assert(fabsf(left) < 1.0e-6f);
@@ -107,7 +121,7 @@ static void test_sampler_mode(void)
     music_box_loop_bank_pad_press(&bank, 1u, &transport);
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_ONE_SHOT);
     music_box_loop_bank_pad_hold(&bank, 1u, &transport);
-    assert(bank.slots[1].state == MUSIC_BOX_LOOP_ARMED_RECORD);
+    assert(bank.slots[1].state == MUSIC_BOX_LOOP_RECORDING);
     music_box_loop_bank_destroy(&bank);
 }
 
