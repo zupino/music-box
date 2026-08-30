@@ -15,8 +15,10 @@ This page summarises the capabilities currently implemented on the main developm
 
 ### Stereo looper
 
-- four independent stereo loop slots;
-- MPD218 notes 52-55 mapped to loop slots 1-4;
+- sixteen independent stereo loop slots, one per MPD218 pad;
+- MPD218 notes 52-67 mapped to pads 1-16, bottom-left first;
+- a shorter note list leaves the remaining pads inert, so an older
+  four-slot configuration still starts;
 - hold a stopped pad to arm recording;
 - release to arm recording finish;
 - press a playing loop to arm stop;
@@ -27,8 +29,9 @@ This page summarises the capabilities currently implemented on the main developm
 ### Performance modes
 
 - two modes, loop and sampler, sharing the same four pads;
-- an MPD218 knob selects the mode, with hysteresis around the switch point;
-- each mode owns a separate bank of four stereo slots, so neither overwrites
+- an MPD218 knob selects the mode at its midpoint, with a configurable dead
+  band that sets how much rotation a change costs;
+- each mode owns a separate bank of sixteen stereo slots, so neither overwrites
   the other;
 - both banks are always mixed, so a running loop survives a mode change;
 - the bank that received a pad press also receives its release, so changing
@@ -42,6 +45,8 @@ This page summarises the capabilities currently implemented on the main developm
 - recording is never quantized: a sample spans exactly press to release;
 - a rolling pre-roll recovers the head of the take, which elapses before the
   hold is recognised;
+- the pre-roll drops anything captured while the sampler bank was sounding, so
+  a pad's own preview cannot bleed into its replacement;
 - a finished sample stays silent until its pad is tapped;
 - a tap plays the sample once from its start and stops at its end;
 - a tap during playback restarts the sample;
@@ -56,7 +61,9 @@ This page summarises the capabilities currently implemented on the main developm
 - quantization modes: off, beat, or bar, applied to loop mode;
 - quantized record start;
 - quantized record finish;
-- quantized loop stop;
+- quantized loop stop, with the loop sounding out its current cycle and shown
+  as leaving until the boundary arrives;
+- a second press before the boundary cancels a pending stop;
 - quick press/release before a boundary produces one complete quantization interval;
 - integer/rational timing avoids long-term floating-point drift.
 
@@ -130,6 +137,9 @@ This page summarises the capabilities currently implemented on the main developm
 - transport boundary tests;
 - loop-state transition tests;
 - sampler trigger, one-shot completion and re-record tests;
+- pre-roll rejection of the bank's own playback;
+- stop-arm and stop-cancel notification tests;
+- configuration parsing, including short and rejected pad-note lists;
 - lock-free queue tests;
 - synthetic AEC convergence tests;
 - strict compiler warnings;

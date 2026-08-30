@@ -1,6 +1,6 @@
 # Music Box
 
-Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into a headless stereo synthesizer, four-slot live looper and four-pad sampler.
+Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into a headless stereo synthesizer, sixteen-slot live looper and sixteen-pad sampler.
 
 The project deliberately stays small: one C11 process for audio/loop state/MIDI routing, JACK for low-latency audio, ALSA sequencer MIDI, FluidSynth as a separate service, and no bundled third-party source or SoundFonts.
 
@@ -26,7 +26,7 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 ## Current features
 
 - stereo recording from both WM8960 microphones;
-- four independent loop slots on MPD218 notes 52–55;
+- sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
 - hold to record, release to finish, press a playing loop to stop it;
 - a second performance mode, sampler, where each pad holds a one-shot recording;
 - knob 2 switches between loop and sampler mode without silencing running loops;
@@ -36,7 +36,7 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 - dependency-free stereo NLMS acoustic echo reduction;
 - automatic JACK and ALSA MIDI connection repair;
 - ordered systemd startup;
-- 128x32 I2C OLED showing the mode, what each pad holds and the beat;
+- 128x32 I2C OLED showing the mode, a 4x4 map of what each pad holds, and the beat;
 - MPD218 knob control of the WM8960 hardware output volume, shown briefly on the display;
 - current Raspberry Pi OS and legacy Raspbian/kernel notes.
 
@@ -67,8 +67,12 @@ FluidSynth is routed through Music Box rather than directly to the physical play
 
 ## Controls
 
-The same four pads, notes 52 to 55, drive two performance modes. Knob 2 (K2,
-bank A, CC 9 by default) chooses between them.
+All sixteen pads, notes 52 to 67, drive two performance modes. Knob 2 (K2,
+bank A, CC 9 by default) chooses between them: the left half of its travel is
+loop mode, the right half sampler.
+
+Pads are numbered the way the MPD218 labels them, bottom-left first, so pad 1 is
+note 52 and pad 16 is note 67. The display uses the same arrangement.
 
 ### Loop mode
 
@@ -78,7 +82,9 @@ The default. With `quantize=bar`:
 2. Recording starts at the next common bar boundary.
 3. Release: finish is armed.
 4. Recording closes at the next bar and begins looping.
-5. Press a playing pad: stop is armed for the next bar.
+5. Press a playing pad: stop is armed for the next bar. The loop keeps sounding
+   out the current cycle, and the display hatches its cell to show it is on the
+   way out. Pressing again before the boundary cancels the stop.
 
 A quick press/release before recording starts creates one complete quantization interval. This often leaves the physical pad tap before the recorded material; dedicated tap-noise filtering remains deferred.
 
@@ -101,17 +107,26 @@ sample therefore spans press to release, which is what you want for a word, a
 hit or a short phrase, rather than the whole bar `quantize` would round it up
 to. Loop mode is unaffected and still follows `quantize`.
 
-The two modes own separate banks of four slots, so a sample never overwrites a
-loop. Loops recorded in loop mode keep playing while sampler pads are used, and
+The pre-roll only keeps input captured while the sampler bank was silent. Since
+tapping a loaded pad previews it, re-recording over a pad that is sounding
+starts the take at the hold instead, losing that head. That is deliberate: those
+400 ms contain the outgoing sample coming back through the microphones, which
+would otherwise be pasted onto the front of its own replacement.
+
+The two modes own separate banks of sixteen slots, so a sample never overwrites
+a loop. Loops recorded in loop mode keep playing while sampler pads are used, and
 samples keep playing after a switch back. That also means a sampler recording
 captures any loop still running through the microphones unless the loops are
 stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
 it is moved, so a freshly started service is always in loop mode regardless of
-where the knob is parked. Positions from 72 upwards select sampler and below 56
-select loop; the gap keeps a knob resting mid-travel from flapping between the
-two.
+where the knob is parked. The switch sits at the knob's midpoint, with a dead
+band of `mode_cc_hysteresis` counts either side that holds the current mode.
+That dead band is the only rotation a mode change costs once the knob is near
+the middle — 2 counts out of 127 by default, roughly 8 degrees on the MPD218 pot
+— so lower it for a lighter switch and raise it if a resting knob starts
+flapping on its own jitter.
 
 ## Configuration
 
@@ -144,9 +159,16 @@ max_sample_seconds=10
 pad_hold_milliseconds=400
 ```
 
-`max_sample_seconds` allocates four more stereo buffers of that length at
-startup, on top of the four `max_loop_seconds` loop buffers, so raise it with
-the Raspberry Pi's memory in mind. `pad_hold_milliseconds` is the line between
+```ini
+mode_cc_hysteresis=2
+```
+
+`max_sample_seconds` allocates sixteen more stereo buffers of that length at
+startup, on top of the sixteen `max_loop_seconds` loop buffers. Every buffer is
+reserved whether or not it is ever used, because the audio callback cannot
+allocate, so the total is `16 x (max_loop_seconds + max_sample_seconds) x
+384 kB` at 48 kHz — about 246 MB with the shipped values. The startup banner
+prints the figure. `pad_hold_milliseconds` is the line between
 triggering a sample and recording a new one, and it also sizes the pre-roll, so
 lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
@@ -160,14 +182,25 @@ with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
 ### Mode and pad display
 
 An SSD1306-compatible 128x32 I2C OLED at address `0x3c` shows, top to bottom:
-the active mode and either the tempo or the recording state; one box per pad;
+the active mode and either the tempo or the pad being recorded; a 4x4 pad map;
 and a four-bar beat footer with the current beat filled. The footer is present
 on every screen.
 
-A pad box is empty when the pad holds nothing, outlined when it holds audio,
-double-outlined while it records, and inverted while it sounds. So in loop mode
-the inverted boxes are the loops currently playing back, and in sampler mode the
-outlined boxes are the pads with a sample ready to trigger.
+The pad map is a 4x4 grid with the same shape as the controller, pad 1 at the
+bottom left, so a cell's position identifies its pad without needing a number:
+
+| Cell | Meaning |
+|---|---|
+| blank | the pad has no note assigned |
+| baseline | mapped, but holds nothing |
+| outline | holds audio, silent |
+| solid | sounding |
+| hatched | sounding out this cycle, stopping at the next boundary |
+| blinking | armed or recording |
+
+So in loop mode the solid cells are the loops playing back and a hatched cell is
+one you have asked to stop, still finishing its current pass. In sampler mode
+the outlined cells are the pads with a sample ready to trigger.
 
 The default device is `/dev/i2c-1`; the display is optional, and an
 initialization failure does not stop the audio engine. Configure it with:
