@@ -47,7 +47,31 @@ int main(void)
 
     assert(load("mode_cc_hysteresis=0\n", &config));
     assert(config.mode_cc_hysteresis == 0u);
-    assert(!load("mode_cc_hysteresis=33\n", &config));
+    /* Wider than half a zone would make the middle mode unreachable. */
+    assert(!load("mode_cc_hysteresis=17\n", &config));
+
+    /* The knob's travel is three zones: loop, sampler, pad. */
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 0u, 2u) == MUSIC_BOX_MODE_LOOP);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 64u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 127u, 2u) == MUSIC_BOX_MODE_PAD);
+
+    /* Each switch costs only the dead band, and inside it the mode holds. */
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 40u, 2u) == MUSIC_BOX_MODE_LOOP);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 42u, 2u) == MUSIC_BOX_MODE_LOOP);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 44u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 83u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 87u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 84u, 2u) == MUSIC_BOX_MODE_PAD);
+
+    /* Every position resolves when the dead band is off, and a switch point
+       itself belongs to the outer zone: 0-42 loop, 43-84 sampler, 85-127 pad. */
+    for (unsigned int value = 0u; value <= 127u; ++value)
+        assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, (uint8_t)value, 0u) ==
+               (value <= 42u ? MUSIC_BOX_MODE_LOOP
+                             : value < 85u ? MUSIC_BOX_MODE_SAMPLER : MUSIC_BOX_MODE_PAD));
+
+    /* The middle zone survives the widest dead band the parser accepts. */
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 64u, 16u) == MUSIC_BOX_MODE_SAMPLER);
 
     puts("config tests passed");
     return 0;

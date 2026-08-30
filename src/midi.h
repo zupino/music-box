@@ -21,6 +21,9 @@ typedef struct {
     uint64_t pad_press_milliseconds[MUSIC_BOX_LOOP_COUNT];
     bool pad_held[MUSIC_BOX_LOOP_COUNT];
     bool pad_hold_sent[MUSIC_BOX_LOOP_COUNT];
+    /* Pads whose Note On went to the synthesizer, so the matching Note Off
+       follows it even if the mode knob moves while the pad is down. */
+    bool pad_forwarded[MUSIC_BOX_LOOP_COUNT];
     MusicBoxMode mode;
 } MusicBoxMidi;
 

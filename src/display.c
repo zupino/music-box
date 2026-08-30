@@ -216,8 +216,8 @@ static unsigned int first_slot(uint16_t mask)
 static void draw_status_screen(MusicBoxDisplay *display)
 {
     const unsigned int mode = (unsigned int)display->mode;
-    draw_text(display, PAD_ORIGIN_X, 0u,
-              display->mode == MUSIC_BOX_MODE_SAMPLER ? "SAMPLER" : "LOOP");
+    static const char *const labels[MUSIC_BOX_MODE_COUNT] = {"LOOP", "SAMPLER", "PAD"};
+    draw_text(display, PAD_ORIGIN_X, 0u, labels[mode]);
 
     /* With sixteen pads the state has to name the pad it belongs to. */
     char right[16];
@@ -357,10 +357,10 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->playing_slots[bank] &= clear;
         display->pending_stop_slots[bank] &= clear;
         break;
-    case MUSIC_BOX_EVENT_SAMPLE_STARTED:
+    case MUSIC_BOX_EVENT_SLOT_STARTED:
         display->playing_slots[bank] |= bit;
         break;
-    case MUSIC_BOX_EVENT_SAMPLE_FINISHED:
+    case MUSIC_BOX_EVENT_SLOT_FINISHED:
         display->playing_slots[bank] &= clear;
         break;
     case MUSIC_BOX_EVENT_MODE_CHANGED:

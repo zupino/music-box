@@ -161,11 +161,26 @@ size_t music_box_config_mapped_pads(const MusicBoxConfig *config)
     return count;
 }
 
+MusicBoxMode music_box_mode_for_knob(MusicBoxMode current, uint8_t value,
+                                     uint8_t hysteresis)
+{
+    const int position = (int)value;
+    const int dead_band = (int)hysteresis;
+    if (position <= MUSIC_BOX_MODE_FIRST_SWITCH - dead_band) return MUSIC_BOX_MODE_LOOP;
+    if (position >= MUSIC_BOX_MODE_SECOND_SWITCH + dead_band) return MUSIC_BOX_MODE_PAD;
+    if (position >= MUSIC_BOX_MODE_FIRST_SWITCH + dead_band &&
+        position <= MUSIC_BOX_MODE_SECOND_SWITCH - dead_band)
+        return MUSIC_BOX_MODE_SAMPLER;
+    /* Inside a dead band: hold whatever the knob last resolved to. */
+    return current;
+}
+
 const char *music_box_mode_name(MusicBoxMode mode)
 {
     switch (mode) {
     case MUSIC_BOX_MODE_LOOP: return "loop";
     case MUSIC_BOX_MODE_SAMPLER: return "sampler";
+    case MUSIC_BOX_MODE_PAD: return "pad";
     default: return "unknown";
     }
 }
@@ -209,7 +224,9 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
         } else if (strcmp(key, "mode_control_enabled") == 0) {
             valid = parse_bool(value, &config->mode_control_enabled);
         } else if (strcmp(key, "mode_cc_hysteresis") == 0) {
-            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 32u;
+            /* Three zones of about 42 counts, so a wider dead band than half a
+               zone would make the middle one unreachable. */
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 16u;
             config->mode_cc_hysteresis = (uint8_t)unsigned_value;
         } else if (strcmp(key, "mode_cc") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;

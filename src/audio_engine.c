@@ -42,8 +42,8 @@ static MusicBoxLoopBank *bank_for_mode(MusicBoxAudioEngine *engine, MusicBoxMode
 static void set_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
 {
     /* Nothing is stopped here: loops recorded in loop mode keep playing while
-       the sampler pads are in use, and vice versa. */
-    if (mode != MUSIC_BOX_MODE_LOOP && mode != MUSIC_BOX_MODE_SAMPLER) return;
+       the sampler pads are in use, and while the pads play the synthesizer. */
+    if ((unsigned int)mode >= MUSIC_BOX_MODE_COUNT) return;
     if (mode == engine->mode) return;
     engine->mode = mode;
     const MusicBoxEvent event = {
@@ -55,6 +55,26 @@ static void set_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
     (void)music_box_event_queue_push(engine->events, &event);
 }
 
+/*
+ * Pad mode has no bank: the MIDI thread has already forwarded the note to the
+ * synthesizer, and the command reaches here only so the screen can light the
+ * cell while the pad is down.
+ */
+static void report_pad_note(MusicBoxAudioEngine *engine,
+                            const MusicBoxCommand *command)
+{
+    if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) return;
+    const MusicBoxEvent event = {
+        .type = command->type == MUSIC_BOX_COMMAND_PAD_PRESS
+                    ? MUSIC_BOX_EVENT_SLOT_STARTED
+                    : MUSIC_BOX_EVENT_SLOT_FINISHED,
+        .slot = command->slot,
+        .bank = (uint8_t)MUSIC_BOX_MODE_PAD,
+        .value = 0u,
+    };
+    (void)music_box_event_queue_push(engine->events, &event);
+}
+
 static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand *command)
 {
     if (command->slot >= MUSIC_BOX_LOOP_COUNT) return;
@@ -62,7 +82,12 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
        gesture follow it there even if the mode knob moved in between. */
     if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS)
         engine->pad_bank[command->slot] = engine->mode;
-    MusicBoxLoopBank *bank = bank_for_mode(engine, engine->pad_bank[command->slot]);
+    const MusicBoxMode target = engine->pad_bank[command->slot];
+    if (target == MUSIC_BOX_MODE_PAD) {
+        report_pad_note(engine, command);
+        return;
+    }
+    MusicBoxLoopBank *bank = bank_for_mode(engine, target);
 
     switch (command->type) {
     case MUSIC_BOX_COMMAND_PAD_PRESS:

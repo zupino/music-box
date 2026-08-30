@@ -30,7 +30,8 @@ static void print_usage(const char *program)
 static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
 {
     const unsigned int slot = (unsigned int)event->slot + 1u;
-    const char *bank = event->bank == (uint8_t)MUSIC_BOX_MODE_SAMPLER ? "Sample" : "Loop";
+    static const char *const banks[MUSIC_BOX_MODE_COUNT] = {"Loop", "Sample", "Pad"};
+    const char *bank = banks[event->bank < MUSIC_BOX_MODE_COUNT ? event->bank : 0u];
     switch (event->type) {
     case MUSIC_BOX_EVENT_RECORD_ARMED:
         printf("%s %u: recording armed\n", bank, slot);
@@ -53,10 +54,10 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_LOOP_FULL:
         printf("%s %u: maximum recording length reached\n", bank, slot);
         break;
-    case MUSIC_BOX_EVENT_SAMPLE_STARTED:
+    case MUSIC_BOX_EVENT_SLOT_STARTED:
         printf("%s %u: triggered\n", bank, slot);
         break;
-    case MUSIC_BOX_EVENT_SAMPLE_FINISHED:
+    case MUSIC_BOX_EVENT_SLOT_FINISHED:
         printf("%s %u: finished\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
@@ -137,7 +138,7 @@ int main(int argc, char **argv)
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_loop_seconds,
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
-        printf("Mode knob: CC %u selects loop or sampler, dead band +/-%u around 64\n",
+        printf("Mode knob: CC %u selects loop, sampler or pad in thirds, dead band +/-%u\n",
                (unsigned int)config.mode_cc, (unsigned int)config.mode_cc_hysteresis);
     else
         printf("Mode knob: disabled\n");

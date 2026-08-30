@@ -13,6 +13,11 @@
 /* MIDI notes are 0-127, so this cannot collide with a real mapping. */
 #define MUSIC_BOX_NOTE_UNMAPPED 0xffu
 
+/* The mode knob is an absolute pot, so the three modes take a third of its
+   travel each: loop, then sampler, then pad. */
+#define MUSIC_BOX_MODE_FIRST_SWITCH 42
+#define MUSIC_BOX_MODE_SECOND_SWITCH 85
+
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];
     uint32_t max_loop_seconds;
@@ -62,5 +67,9 @@ const char *music_box_quantize_mode_name(MusicBoxQuantizeMode mode);
 const char *music_box_mode_name(MusicBoxMode mode);
 /* Number of pads with a note assigned; the rest are inert. */
 size_t music_box_config_mapped_pads(const MusicBoxConfig *config);
+/* Resolves a mode-knob position. Positions within hysteresis counts of a switch
+   point return current, which is what keeps a resting knob from flapping. */
+MusicBoxMode music_box_mode_for_knob(MusicBoxMode current, uint8_t value,
+                                     uint8_t hysteresis);
 
 #endif

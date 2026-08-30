@@ -28,7 +28,7 @@ static void stop_one_shot(MusicBoxLoopBank *bank, uint8_t slot_index)
 
     slot->state = MUSIC_BOX_LOOP_STOPPED;
     slot->play_position = 0u;
-    emit_event(bank, MUSIC_BOX_EVENT_SAMPLE_FINISHED, slot_index, 0u);
+    emit_event(bank, MUSIC_BOX_EVENT_SLOT_FINISHED, slot_index, 0u);
 }
 
 /*
@@ -197,7 +197,7 @@ static void sampler_pad_press(MusicBoxLoopBank *bank, uint8_t slot_index)
         slot->play_position = 0u;
         slot->state = MUSIC_BOX_LOOP_ONE_SHOT;
         emit_event(bank,
-                   MUSIC_BOX_EVENT_SAMPLE_STARTED,
+                   MUSIC_BOX_EVENT_SLOT_STARTED,
                    slot_index,
                    slot->recorded_frames);
         break;

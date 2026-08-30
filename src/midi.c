@@ -8,14 +8,6 @@
 #include <string.h>
 #include <time.h>
 
-/* The mode knob is an absolute pot, so the switch sits at its midpoint: the
-   left half is loop, the right half sampler. Positions within
-   mode_cc_hysteresis of the midpoint keep the current mode, which is what stops
-   a resting knob from flapping on its own jitter; that dead band is also the
-   only rotation a mode change actually costs once the knob is near the middle,
-   so it is configurable and deliberately narrow. */
-#define MODE_KNOB_MIDPOINT 64
-
 static bool has_prefix(const char *text, const char *prefix)
 {
     return strncmp(text, prefix, strlen(prefix)) == 0;
@@ -58,16 +50,17 @@ static void check_pad_holds(MusicBoxMidi *midi, uint64_t now)
     }
 }
 
-/* The mode knob is absolute, so the mode only follows it once it is moved. */
+/* The mode knob is absolute, so the mode only follows it once it is moved. The
+   dead band around each switch point is the only rotation a change costs once
+   the knob is near one, so it is configurable and deliberately narrow. */
 static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *event)
 {
     if (event->type != SND_SEQ_EVENT_CONTROLLER || !midi->config.mode_control_enabled) return false;
     if (event->data.control.param != (unsigned int)midi->config.mode_cc) return false;
-    const int value = event->data.control.value;
-    const int dead_band = (int)midi->config.mode_cc_hysteresis;
-    MusicBoxMode mode = midi->mode;
-    if (value >= MODE_KNOB_MIDPOINT + dead_band) mode = MUSIC_BOX_MODE_SAMPLER;
-    else if (value <= MODE_KNOB_MIDPOINT - dead_band) mode = MUSIC_BOX_MODE_LOOP;
+    const int position = event->data.control.value;
+    if (position < 0 || position > 127) return true;
+    const MusicBoxMode mode = music_box_mode_for_knob(midi->mode, (uint8_t)position,
+                                                      midi->config.mode_cc_hysteresis);
     if (mode == midi->mode) return true;
     midi->mode = mode;
     const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,
@@ -97,13 +90,23 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
     if (note_event) slot = loop_slot_for_note(midi, event->data.note.note);
     if (slot >= 0) {
         const bool pressed = event->type == SND_SEQ_EVENT_NOTEON && event->data.note.velocity > 0u;
-        midi->pad_held[slot] = pressed;
+        /* In pad mode the note belongs to the synthesizer, so the pad plays the
+           SoundFont and the command below only drives the display. A Note Off
+           follows its own Note On, so changing mode mid-press cannot hang a
+           note on FluidSynth. */
+        bool forward = midi->mode == MUSIC_BOX_MODE_PAD;
         if (pressed) {
             midi->pad_hold_sent[slot] = false;
             midi->pad_press_milliseconds[slot] = monotonic_milliseconds();
+            midi->pad_forwarded[slot] = forward;
+        } else {
+            forward = midi->pad_forwarded[slot];
+            midi->pad_forwarded[slot] = false;
         }
+        /* Only a looping or sampling pad needs its hold timed. */
+        midi->pad_held[slot] = pressed && !forward;
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
-        return;
+        if (!forward) return;
     }
     if (handle_mode_controller(midi, event)) return;
     if (handle_volume_controller(midi, event)) return;
