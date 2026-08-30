@@ -17,6 +17,11 @@ typedef struct {
     MusicBoxConfig config;
     MusicBoxCommandQueue *commands;
     MusicBoxVolume *volume;
+    /* Long-press tracking. Only the MIDI thread touches these. */
+    uint64_t pad_press_milliseconds[MUSIC_BOX_LOOP_COUNT];
+    bool pad_held[MUSIC_BOX_LOOP_COUNT];
+    bool pad_hold_sent[MUSIC_BOX_LOOP_COUNT];
+    MusicBoxMode mode;
 } MusicBoxMidi;
 
 bool music_box_midi_start(MusicBoxMidi *midi,

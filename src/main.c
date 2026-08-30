@@ -30,27 +30,37 @@ static void print_usage(const char *program)
 static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
 {
     const unsigned int slot = (unsigned int)event->slot + 1u;
+    const char *bank = event->bank == (uint8_t)MUSIC_BOX_MODE_SAMPLER ? "Sample" : "Loop";
     switch (event->type) {
     case MUSIC_BOX_EVENT_RECORD_ARMED:
-        printf("Loop %u: recording armed\n", slot);
+        printf("%s %u: recording armed\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_RECORD_STARTED:
-        printf("Loop %u: recording started at transport frame %llu\n", slot, (unsigned long long)event->value);
+        printf("%s %u: recording started at transport frame %llu\n", bank, slot, (unsigned long long)event->value);
         break;
     case MUSIC_BOX_EVENT_RECORD_FINISHED:
-        printf("Loop %u: recording finished (%.3f seconds)\n", slot, sample_rate == 0u ? 0.0 : (double)event->value / sample_rate);
+        printf("%s %u: recording finished (%.3f seconds)\n", bank, slot, sample_rate == 0u ? 0.0 : (double)event->value / sample_rate);
         break;
     case MUSIC_BOX_EVENT_LOOP_STOP_ARMED:
-        printf("Loop %u: stop armed\n", slot);
+        printf("%s %u: stop armed\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_LOOP_STOPPED:
-        printf("Loop %u: stopped\n", slot);
+        printf("%s %u: stopped\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_LOOP_FULL:
-        printf("Loop %u: maximum recording length reached\n", slot);
+        printf("%s %u: maximum recording length reached\n", bank, slot);
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_STARTED:
+        printf("%s %u: triggered\n", bank, slot);
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_FINISHED:
+        printf("%s %u: finished\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         printf("Tempo: %.3f BPM\n", (double)event->value / 1000.0);
+        break;
+    case MUSIC_BOX_EVENT_MODE_CHANGED:
+        printf("Mode: %s\n", music_box_mode_name((MusicBoxMode)event->value));
         break;
     case MUSIC_BOX_EVENT_BEAT:
         break;
@@ -107,6 +117,14 @@ int main(int argc, char **argv)
            music_box_quantize_mode_name(config.quantize_mode),
            (double)config.tempo_millibpm / 1000.0,
            config.beats_per_bar);
+    printf("Mode: %s at startup, hold %u ms to record a sample, samples up to %u s\n",
+           music_box_mode_name(MUSIC_BOX_MODE_LOOP),
+           (unsigned int)config.pad_hold_milliseconds,
+           (unsigned int)config.max_sample_seconds);
+    if (config.mode_control_enabled)
+        printf("Mode knob: CC %u selects loop or sampler\n", (unsigned int)config.mode_cc);
+    else
+        printf("Mode knob: disabled\n");
     printf("AEC: %s, taps: %zu, delay: %zu frames\n",
            config.aec_enabled ? "enabled" : "disabled",
            config.aec_taps,

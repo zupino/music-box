@@ -34,16 +34,62 @@ static void emit_beat_event(MusicBoxAudioEngine *engine)
     (void)music_box_event_queue_push(engine->events, &event);
 }
 
+static MusicBoxLoopBank *bank_for_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
+{
+    return mode == MUSIC_BOX_MODE_SAMPLER ? &engine->sampler_bank : &engine->loop_bank;
+}
+
+static void set_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
+{
+    /* Nothing is stopped here: loops recorded in loop mode keep playing while
+       the sampler pads are in use, and vice versa. */
+    if (mode != MUSIC_BOX_MODE_LOOP && mode != MUSIC_BOX_MODE_SAMPLER) return;
+    if (mode == engine->mode) return;
+    engine->mode = mode;
+    const MusicBoxEvent event = {
+        .type = MUSIC_BOX_EVENT_MODE_CHANGED,
+        .slot = 0u,
+        .bank = (uint8_t)mode,
+        .value = (uint64_t)mode,
+    };
+    (void)music_box_event_queue_push(engine->events, &event);
+}
+
+static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand *command)
+{
+    if (command->slot >= MUSIC_BOX_LOOP_COUNT) return;
+    /* Only a press picks the bank. The hold and release that complete the same
+       gesture follow it there even if the mode knob moved in between. */
+    if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS)
+        engine->pad_bank[command->slot] = engine->mode;
+    MusicBoxLoopBank *bank = bank_for_mode(engine, engine->pad_bank[command->slot]);
+
+    switch (command->type) {
+    case MUSIC_BOX_COMMAND_PAD_PRESS:
+        music_box_loop_bank_pad_press(bank, command->slot, &engine->transport);
+        break;
+    case MUSIC_BOX_COMMAND_PAD_HOLD:
+        music_box_loop_bank_pad_hold(bank, command->slot, &engine->transport);
+        break;
+    case MUSIC_BOX_COMMAND_PAD_RELEASE:
+    default:
+        music_box_loop_bank_pad_release(bank, command->slot, &engine->transport);
+        break;
+    }
+}
+
 static void process_commands(MusicBoxAudioEngine *engine)
 {
     MusicBoxCommand command;
     while (music_box_command_queue_pop(engine->commands, &command)) {
         switch (command.type) {
         case MUSIC_BOX_COMMAND_PAD_PRESS:
-            music_box_loop_bank_pad_press(&engine->loop_bank, command.slot, &engine->transport);
-            break;
+        case MUSIC_BOX_COMMAND_PAD_HOLD:
         case MUSIC_BOX_COMMAND_PAD_RELEASE:
-            music_box_loop_bank_pad_release(&engine->loop_bank, command.slot, &engine->transport);
+            route_pad_command(engine, &command);
+            break;
+        case MUSIC_BOX_COMMAND_SET_MODE:
+            set_mode(engine, (MusicBoxMode)command.mode);
             break;
         case MUSIC_BOX_COMMAND_SET_TEMPO:
             music_box_transport_set_tempo(&engine->transport, command.tempo_millibpm);
@@ -69,11 +115,18 @@ static int audio_process(jack_nframes_t frame_count, void *argument)
     for (jack_nframes_t frame = 0u; frame < frame_count; ++frame) {
         if (engine->transport.beat_boundary) emit_beat_event(engine);
         music_box_loop_bank_apply_boundary(&engine->loop_bank, &engine->transport);
+        music_box_loop_bank_apply_boundary(&engine->sampler_bank, &engine->transport);
         float loop_left = 0.0f;
         float loop_right = 0.0f;
+        float sample_left = 0.0f;
+        float sample_right = 0.0f;
         music_box_loop_bank_mix_sample(&engine->loop_bank, &loop_left, &loop_right);
-        const float mixed_left = (synth_left[frame] * engine->config.synth_gain + loop_left * engine->config.loop_gain) * engine->config.master_gain;
-        const float mixed_right = (synth_right[frame] * engine->config.synth_gain + loop_right * engine->config.loop_gain) * engine->config.master_gain;
+        music_box_loop_bank_mix_sample(&engine->sampler_bank, &sample_left, &sample_right);
+        /* Both banks play at once: switching mode never silences a running loop. */
+        const float played_left = loop_left + sample_left;
+        const float played_right = loop_right + sample_right;
+        const float mixed_left = (synth_left[frame] * engine->config.synth_gain + played_left * engine->config.loop_gain) * engine->config.master_gain;
+        const float mixed_right = (synth_right[frame] * engine->config.synth_gain + played_right * engine->config.loop_gain) * engine->config.master_gain;
         const float final_left = clamp_sample(mixed_left);
         const float final_right = clamp_sample(mixed_right);
         float clean_left = 0.0f;
@@ -83,6 +136,7 @@ static int audio_process(jack_nframes_t frame_count, void *argument)
                                       final_left, final_right,
                                       &clean_left, &clean_right);
         music_box_loop_bank_record_sample(&engine->loop_bank, clean_left, clean_right);
+        music_box_loop_bank_record_sample(&engine->sampler_bank, clean_left, clean_right);
         output_left[frame] = final_left;
         output_right[frame] = final_right;
         music_box_transport_advance(&engine->transport);
@@ -125,9 +179,13 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
         fprintf(stderr, "Cannot connect to JACK (status 0x%x). Is music-box-jack running?\n", status);
         return false;
     }
+    engine->mode = MUSIC_BOX_MODE_LOOP;
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
     if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
-        !music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode, events) ||
+        !music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode,
+                                  MUSIC_BOX_MODE_LOOP, events) ||
+        !music_box_loop_bank_init(&engine->sampler_bank, sample_rate, config->max_sample_seconds, config->quantize_mode,
+                                  MUSIC_BOX_MODE_SAMPLER, events) ||
         !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
                                     config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio)) {
         fprintf(stderr, "Cannot initialize the audio engine buffers\n");
@@ -159,6 +217,7 @@ void music_box_audio_engine_destroy(MusicBoxAudioEngine *engine)
     }
     music_box_echo_cancel_destroy(&engine->echo_canceller);
     music_box_loop_bank_destroy(&engine->loop_bank);
+    music_box_loop_bank_destroy(&engine->sampler_bank);
 }
 
 static void connect_if_needed(jack_client_t *client, const char *source, const char *destination)

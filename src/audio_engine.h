@@ -23,6 +23,11 @@ typedef struct {
     MusicBoxConfig config;
     MusicBoxTransport transport;
     MusicBoxLoopBank loop_bank;
+    MusicBoxLoopBank sampler_bank;
+    MusicBoxMode mode;
+    /* The bank each pad was pressed on, so a mode change mid-gesture cannot
+       route the matching release to the other bank and strand a recording. */
+    MusicBoxMode pad_bank[MUSIC_BOX_LOOP_COUNT];
     MusicBoxEchoCanceller echo_canceller;
     MusicBoxCommandQueue *commands;
     MusicBoxEventQueue *events;
