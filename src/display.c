@@ -347,10 +347,23 @@ bool music_box_display_init(MusicBoxDisplay *display,
     return true;
 }
 
+/*
+ * One failed I2C transfer is not worth losing the screen for the rest of the
+ * run; the bus recovers. This matters more than it used to, because the screen
+ * now redraws on pad events and on the blink, so it writes far more often than
+ * when it only showed a beat.
+ */
+#define DISPLAY_WRITE_FAILURE_LIMIT 5u
+
 static void commit(MusicBoxDisplay *display)
 {
-    if (refresh(display)) return;
-    fprintf(stderr, "Cannot update the display: %s\n", strerror(errno));
+    if (refresh(display)) {
+        display->write_failures = 0u;
+        return;
+    }
+    if (++display->write_failures < DISPLAY_WRITE_FAILURE_LIMIT) return;
+    fprintf(stderr, "Giving up on the display after %u failed frames: %s\n",
+            display->write_failures, strerror(errno));
     music_box_display_destroy(display);
 }
 
@@ -452,6 +465,11 @@ void music_box_display_tick(MusicBoxDisplay *display)
     display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
     display->blink_on = !display->blink_on;
     commit(display);
+}
+
+bool music_box_display_active(const MusicBoxDisplay *display)
+{
+    return display != NULL && display->enabled;
 }
 
 void music_box_display_destroy(MusicBoxDisplay *display)

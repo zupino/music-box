@@ -207,17 +207,34 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
     engine->mode = MUSIC_BOX_MODE_LOOP;
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
     if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
-        !music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode,
+        !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
+                                    config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio)) {
+        fprintf(stderr, "Cannot initialize the transport or echo canceller\n");
+        music_box_audio_engine_destroy(engine);
+        return false;
+    }
+    /* Every slot of both banks is reserved up front, which with sixteen pads is
+       the largest thing this process asks the system for. Name the figure and
+       the settings that control it, because "out of memory" on a 1 GB Pi is
+       otherwise a puzzle. */
+    if (!music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode,
                                   MUSIC_BOX_MODE_LOOP, 0u, events) ||
         /* A sample is never quantized: it lasts exactly as long as its pad was
            held, so it captures a spoken word or a hit rather than a bar. The
            pre-roll covers the hold that precedes the recording gesture. */
         !music_box_loop_bank_init(&engine->sampler_bank, sample_rate, config->max_sample_seconds,
                                   MUSIC_BOX_QUANTIZE_OFF, MUSIC_BOX_MODE_SAMPLER,
-                                  config->pad_hold_milliseconds, events) ||
-        !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
-                                    config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio)) {
-        fprintf(stderr, "Cannot initialize the audio engine buffers\n");
+                                  config->pad_hold_milliseconds, events)) {
+        fprintf(stderr,
+                "Cannot reserve the recording buffers: %u loop slots of %u s and "
+                "%u sample slots of %u s need about %.0f MB at %u Hz. Lower "
+                "max_loop_seconds or max_sample_seconds in music-box.conf.\n",
+                (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config->max_loop_seconds,
+                (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config->max_sample_seconds,
+                (double)MUSIC_BOX_LOOP_COUNT *
+                    (double)(config->max_loop_seconds + config->max_sample_seconds) *
+                    (double)sample_rate * 2.0 * sizeof(float) / 1.0e6,
+                sample_rate);
         music_box_audio_engine_destroy(engine);
         return false;
     }

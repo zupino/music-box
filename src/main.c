@@ -104,7 +104,7 @@ int main(int argc, char **argv)
     if (!music_box_audio_engine_init(&engine, &config, &commands, &events)) return EXIT_FAILURE;
     MusicBoxDisplay display;
     if (!music_box_display_init(&display, &config))
-        fprintf(stderr, "Continuing without the beat display\n");
+        fprintf(stderr, "Continuing without the display\n");
     MusicBoxVolume volume;
     if (!music_box_volume_init(&volume, &config))
         fprintf(stderr, "Continuing without MIDI volume control\n");
@@ -121,6 +121,14 @@ int main(int argc, char **argv)
            music_box_quantize_mode_name(config.quantize_mode),
            (double)config.tempo_millibpm / 1000.0,
            config.beats_per_bar);
+    /* Stated explicitly: a blank panel is otherwise indistinguishable from a
+       process that never got this far. */
+    if (music_box_display_active(&display))
+        printf("Display: %s at 0x%02x, ready\n", config.display_i2c_device,
+               (unsigned int)config.display_i2c_address);
+    else
+        printf("Display: not running (%s)\n",
+               config.display_enabled ? "initialization failed" : "disabled in config");
     const size_t pads = music_box_config_mapped_pads(&config);
     printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
            pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
