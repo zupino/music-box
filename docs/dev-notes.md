@@ -411,6 +411,68 @@ The usual caveat still applies in the other direction: the parser rejects
 unknown keys, so once these are written the binary has to be updated before the
 config.
 
+### Storage model: nothing is written to disk
+Worth stating plainly, because "sampler" suggests files and there are none.
+
+**Where samples live.** In RAM only, inside the `music-box` process. There is no
+sample directory, no file format, no naming scheme and no `write()` anywhere in
+the audio path. A sample is a pair of `float` arrays in a `MusicBoxLoopSlot`,
+addressed by slot index alone. The `*.wav` line in `.gitignore` is precautionary
+and matches nothing the program produces.
+
+**Lifetime.** Loops and samples are lost on restart, on a JACK shutdown, and on
+`systemctl restart music-box.service`. Recording over a slot frees nothing and
+allocates nothing; it overwrites the buffer that was allocated at startup.
+
+**How many fit.** Exactly four per bank, always. Eight recordings total, four
+loops and four samples. The count is fixed by `MUSIC_BOX_LOOP_COUNT` and the
+four pads, not by available memory, so nothing runs out and nothing is evicted:
+a fifth recording is not a capacity problem, it is simply not expressible.
+
+**What a second costs.** Stereo 32-bit float at the JACK sample rate:
+
+    sample_rate x 2 channels x 4 bytes
+
+| Rate | Per second | Per minute |
+|---|---|---|
+| 44.1 kHz | 352.8 kB | 21.2 MB |
+| 48 kHz | 384 kB | 23.0 MB |
+
+**What is actually allocated.** All of it at startup, up front, whether or not
+anything is ever recorded, because the audio callback cannot allocate. Each
+bank reserves its maximum length on all four slots:
+
+    loops    4 x max_loop_seconds           x 384 kB/s
+    samples  4 x max_sample_seconds         x 384 kB/s
+    pre-roll 1 x pad_hold_milliseconds/1000 x 384 kB/s
+
+With the shipped config at 48 kHz (`max_loop_seconds=30`,
+`max_sample_seconds=10`, `pad_hold_milliseconds=400`):
+
+| Bank | Reserved |
+|---|---|
+| Loops | 46.1 MB |
+| Samples | 15.4 MB |
+| Pre-roll | 0.15 MB |
+| Total | 61.6 MB |
+
+Note that `config.c` defaults `max_loop_seconds` to 60, twice what the shipped
+config file sets, so a run with a hand-written config that omits the key
+reserves 92 MB for loops instead of 46 MB. On a 1 GB Pi 3B either is fine, but
+`max_loop_seconds=600` and `max_sample_seconds=600`, both of which the parser
+accepts, would ask for 1.8 GB and fail at startup.
+
+**Disk usage of the installation itself** is unrelated and static: the binary,
+three unit files, the config and the helper scripts. The only large file on a
+Music Box system is the SoundFont, which belongs to FluidSynth, is chosen at
+install time and is never written by this program.
+
+Persisting samples across a restart is deferred; see `roadmap.md`. It is the
+one place a real filesystem model would have to be designed, and the open
+questions are the format, where they live relative to `/etc/music-box`, whether
+a slot maps to a fixed filename, and what happens when a stored sample is longer
+than the current `max_sample_seconds`.
+
 ### Not verified on hardware
 Written without access to the test Pi. Knob 2's actual controller number, the
 readability of the boxes at 128x32, whether 400 ms is a comfortable hold
