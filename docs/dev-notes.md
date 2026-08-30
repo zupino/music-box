@@ -287,3 +287,103 @@ knob is parked high. Start the knob low after this change.
 
 Only the fourth was a design error rather than a bug; together they explain
 every symptom reported from the device.
+
+---
+
+## 2026-08-30 — Loop and sampler modes
+
+### Goal
+Add a second performance mode. Loop mode keeps today's behaviour. Sampler mode
+turns every pad into a one-shot recorder: a long press records, a tap plays the
+result once, a further long press replaces it. Knob 2 selects the mode, and the
+display shows the mode, what each pad holds, and a compact beat footer.
+
+### What was added
+- `src/rt_queue.h` — `MusicBoxMode`, the `PAD_HOLD` and `SET_MODE` commands, the
+  `SAMPLE_STARTED` / `SAMPLE_FINISHED` / `MODE_CHANGED` events, and a `bank`
+  field on every event so a consumer can tell the two banks apart.
+- `src/loop_bank.c` — the bank carries a mode. A sampler bank arms on the hold
+  instead of the press, closes a recording into `STOPPED` instead of `PLAYING`,
+  and plays through the new `ONE_SHOT` state, which stops at the stored length
+  rather than wrapping.
+- `src/audio_engine.c` — a second `MusicBoxLoopBank`. Both banks apply
+  boundaries, mix and record on every frame; only pad routing depends on the
+  mode.
+- `src/midi.c` — pad hold timing and the mode controller.
+- `src/display.c` — new layout, described below.
+- `src/config.c` — `mode_control_enabled`, `mode_cc`, `max_sample_seconds`,
+  `pad_hold_milliseconds`.
+- `tests/test_loop_bank.c` — split into a loop case and a sampler case.
+
+### Why two banks instead of one
+The requirement that loops keep playing after a switch to sampler mode rules out
+reinterpreting one set of buffers. With a single bank, a pad that is both a
+running loop and a sampler pad has no unambiguous meaning for a short press. Two
+banks of four slots cost four more stereo buffers and remove the ambiguity
+entirely: `max_sample_seconds` defaults to 10 rather than the loop's 60 to keep
+that cost near 15 MB at 48 kHz.
+
+### Why the hold is timed on the MIDI thread
+Sampler mode needs the recording to be armed *while the pad is still down*, as
+in loop mode, so it cannot wait for the Note Off. The MIDI thread already wakes
+every 5 ms, so it times the hold and emits one extra `PAD_HOLD` command. This
+keeps wall-clock logic out of the JACK callback; the recording it arms still
+starts on an exact transport boundary, so the 5 ms poll does not affect timing.
+
+### Mode changes travel through the command queue
+The mode is applied in the audio callback, not read from an atomic by it. Both
+the mode and the pad gestures then pass through one queue and cannot be
+reordered against each other. The engine also remembers which bank each pad was
+pressed on and routes that pad's hold and release to the same bank, so turning
+the knob mid-gesture cannot leave a slot stuck in `RECORDING`.
+
+### The mode knob is absolute
+Like the volume knob, and with the same consequence: the mode follows the knob
+only once it is moved, so the service always starts in loop mode no matter where
+knob 2 is parked. Thresholds are 72 and up for sampler, below 56 for loop, with
+the gap between them holding the current mode so a knob resting near the middle
+cannot flap. `mode_cc=9` matches the common factory mapping for K2 in bank A;
+verify with `aseqdump -p MPD218`, and keep it distinct from `volume_cc`.
+
+### Display layout, 128x32
+```text
+rows 0-6    mode name          tempo, or REC / ARMED
+rows 9-23   [ 1 ] [ 2 ] [ 3 ] [ 4 ]     one box per pad
+rows 27-31  [===] [   ] [   ] [   ]     beat footer, every screen
+```
+Columns are 32 pixels apart, so each pad box sits directly above its beat bar.
+A pad box is bare when empty, outlined when it holds audio, double-outlined
+while recording, and inverted while sounding. The inversion is an XOR pass over
+the box after the digit is drawn, which is why `invert_rectangle` exists: the
+1-bit framebuffer only ORs pixels otherwise. The four beat circles and the note
+glyph are gone; the volume bar lost four rows to make room for the footer.
+
+Rendering was checked by compiling `display.c` into a throwaway harness that
+dumps the framebuffer as ASCII. Worth repeating for any layout change — it
+catches overlap and clipping without the hardware.
+
+### Config on an existing device
+Unlike the volume session, nothing has to be appended for the feature to work:
+the four new keys all have defaults, and a config written before this change is
+still accepted. `install.sh` keeps the existing
+`/etc/music-box/music-box.conf`, so append these only to tune them:
+
+```bash
+sudo tee -a /etc/music-box/music-box.conf <<'EOF'
+
+mode_control_enabled=true
+mode_cc=9
+max_sample_seconds=10
+pad_hold_milliseconds=400
+EOF
+sudo systemctl restart music-box.service
+```
+
+The usual caveat still applies in the other direction: the parser rejects
+unknown keys, so once these are written the binary has to be updated before the
+config.
+
+### Not verified on hardware
+Written without access to the test Pi. Knob 2's actual controller number, the
+readability of the boxes at 128x32, and whether 400 ms is a comfortable hold
+threshold all need a device check.

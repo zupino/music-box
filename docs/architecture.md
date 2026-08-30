@@ -19,7 +19,7 @@ It produces three principal sinks:
 
 - WM8960 left speaker output;
 - WM8960 right speaker output;
-- four stereo loop buffers in memory.
+- eight stereo recording buffers in memory: four loops and four samples.
 
 The final speaker-bound signal is also reused internally as the reference for acoustic echo reduction.
 
@@ -60,7 +60,7 @@ package "music-box process" {
   component "rt_queue.c\nSPSC command/status queues" as QUEUE
   component "audio_engine.c\nJACK callback and mixer" as ENGINE
   component "transport.c\nsample-accurate beat/bar clock" as TRANSPORT
-  component "loop_bank.c\n4 stereo loop state machines" as LOOPS
+  component "loop_bank.c\n4 stereo slot state machines\nper bank, loop or sampler" as LOOPS
   component "echo_cancel.c\nstereo MIMO NLMS AEC" as AEC
 }
 
@@ -70,7 +70,8 @@ SYSTEMD --> MAIN : starts music-box
 
 MPD --> ALSAMIDI : USB MIDI
 ALSAMIDI --> MIDI : MIDI events
-MIDI --> QUEUE : loop commands\nnotes 52-55
+MIDI --> QUEUE : pad commands\nnotes 52-55\npress / hold / release
+MIDI --> QUEUE : mode changes\nknob 2
 MIDI --> FLUID : non-loop MIDI
 
 FLUID --> JACK : stereo synth audio
@@ -108,13 +109,13 @@ end note
 | `main.c` | Startup, shutdown, event logging and route repair |
 | `config.c` | Small `key=value` configuration parser |
 | `midi.c` | ALSA sequencer ports, MPD discovery and MIDI forwarding |
-| `audio_engine.c` | JACK callback, signal routing and final mixer |
+| `audio_engine.c` | JACK callback, signal routing, mode routing and final mixer |
 | `transport.c` | Drift-free sample/beat/bar clock |
-| `loop_bank.c` | Four stereo buffers and loop state machines |
+| `loop_bank.c` | One bank of four stereo buffers and their slot state machines; instantiated twice, once per mode |
 | `echo_cancel.c` | Built-in two-reference/two-microphone NLMS AEC |
 | `rt_queue.c` | Lock-free SPSC command and status queues |
 | `volume.c` | ALSA simple-mixer hardware output volume driven by a MIDI knob |
-| `display.c` | SSD1306 beat, recording-status and volume screens |
+| `display.c` | SSD1306 mode, pad-state, beat-footer and volume screens |
 
 ## Thread ownership
 
@@ -122,15 +123,16 @@ end note
 ALSA MIDI thread                    JACK real-time thread
 ----------------                    ---------------------
 read MIDI event                     drain command queue
-classify loop note       queue      update transport
-forward other MIDI     -------->    apply loop transitions
-                                    mix synth and loops
+classify loop note       queue      apply the mode change
+time the pad hold      -------->    update transport
+forward other MIDI                  apply slot transitions
+                                    mix synth, loops, samples
                                     run stereo AEC
                          <--------   publish status event
 print/log thread         queue      record clean microphone
 ```
 
-The JACK callback is the only code allowed to mutate transport, loop buffers or loop states. Both queues are fixed-size single-producer/single-consumer rings using C11 atomics.
+The JACK callback is the only code allowed to mutate transport, slot buffers, slot states or the active mode. Both queues are fixed-size single-producer/single-consumer rings using C11 atomics. The mode travels through the same command queue as the pad gestures so that a mode change and the presses around it stay in order.
 
 ## Audio sources, internal processors and sinks
 
@@ -140,14 +142,17 @@ The JACK callback is the only code allowed to mutate transport, loop buffers or 
 | Source | `system:capture_2` | WM8960 right microphone |
 | Source | `fluidsynth:l_00` | FluidSynth left channel |
 | Source | `fluidsynth:r_00` | FluidSynth right channel |
-| Source | Loop slots 1-4 | Previously recorded stereo playback |
+| Source | Loop slots 1-4 | Previously recorded stereo playback, repeating |
+| Source | Sampler slots 1-4 | Previously recorded stereo playback, one shot per tap |
 | Processor | Echo canceller | Removes an estimate of speaker bleed from microphone capture |
-| Processor | Quantized recorder | Writes cleaned microphone samples into an armed loop slot |
+| Processor | Quantized recorder | Writes cleaned microphone samples into an armed slot of either bank |
 | Processor | Loop bank | Plays active loop slots phase-locked to their own stored length |
-| Processor | Stereo mixer | Sums synth and loop playback |
+| Processor | Sampler bank | Plays triggered sampler slots once and stops them at their stored length |
+| Processor | Stereo mixer | Sums synth, loop and sample playback |
 | Processor | Output gain/clip | Produces the exact samples sent to the codec |
 | Internal sink/source | AEC reference delay | Stores speaker-bound samples for later echo estimation |
 | Sink | Loop buffers | Four stereo recordings held in memory |
+| Sink | Sample buffers | Four further stereo recordings held in memory |
 | Sink | `system:playback_1` | WM8960 left playback channel |
 | Sink | `system:playback_2` | WM8960 right playback channel |
 
@@ -236,23 +241,30 @@ component "MPD218" as MPD <<source>>
 component "ALSA Sequencer" as ALSA
 component "MIDI classifier" as CLASSIFY
 component "Loop command queue" as COMMANDS
-component "Audio-thread loop state machines" as STATES
+component "Audio-thread slot state machines\nloop bank and sampler bank" as STATES
 component "FluidSynth MIDI input" as FLUID <<sink>>
 component "ALSA simple mixer\nSpeaker / Headphone" as MIXER <<sink>>
 
 MPD --> ALSA : notes, note-off, CC,
 ALSA --> CLASSIFY
-CLASSIFY --> COMMANDS : notes 52-55\nrecord / finish / stop
+CLASSIFY --> COMMANDS : notes 52-55\npress / hold / release
+CLASSIFY --> COMMANDS : mode CC\nloop or sampler
 COMMANDS --> STATES : consume in JACK callback
 CLASSIFY --> MIXER : volume CC\nhardware playback volume
 CLASSIFY --> FLUID : all other MIDI events
 
 note right of CLASSIFY
-Loop-control notes and the volume
-controller are consumed and are not
-forwarded to FluidSynth. The mixer is
-written from the MIDI thread, never
-from the JACK callback.
+Loop-control notes, the mode controller
+and the volume controller are consumed
+and are not forwarded to FluidSynth. The
+mixer is written from the MIDI thread,
+never from the JACK callback.
+
+A pad still down after pad_hold_milliseconds
+produces one extra hold command. That timing
+lives here so the audio callback never reads
+a wall clock; the recording it arms still
+starts on an exact transport boundary.
 end note
 @enduml
 ```
@@ -315,6 +327,28 @@ AUDIO -> BUFFER : playback starts from frame 0
 
 A release received while still `ARMED_RECORD` is remembered. Recording begins at the next boundary and ends at the following boundary, producing one complete beat or bar. This also tends to keep the physical pad-tap transient before the recorded interval.
 
+## Performance modes
+
+The four pads drive one of two banks, chosen by the mode knob. Each bank is a
+separate `MusicBoxLoopBank` with its own four stereo buffers, so a sample never
+overwrites a loop. Both banks are mixed and both advance their boundaries on
+every frame regardless of the active mode, which is what lets a loop keep
+playing after a switch to sampler mode.
+
+The recording half of the state machine is shared. The mode only changes two
+things: which gesture arms a recording, and what a finished recording does.
+
+| | Loop bank | Sampler bank |
+|---|---|---|
+| Arms a recording | pad press on an idle slot | pad hold past the threshold |
+| Pad press on a slot holding audio | arms a stop | plays it once from the start |
+| A closed recording | starts repeating immediately | waits silently for a tap |
+| End of the stored audio | wraps to frame zero | stops and returns to STOPPED |
+
+The engine records which bank each pad was pressed on and routes that pad's hold
+and release to the same bank. A mode change while a pad is down therefore cannot
+leave a slot stuck in `RECORDING`.
+
 ## Loop-slot state machine
 
 ```plantuml
@@ -348,6 +382,42 @@ ARMED_STOP --> STOPPED : next beat/bar boundary
 note right of PLAYING
 Recorded samples remain in memory when stopped.
 A later recording replaces the slot contents.
+end note
+@enduml
+```
+
+## Sampler-slot state machine
+
+```plantuml
+@startuml
+' SPDX-License-Identifier: MIT
+title Per-slot sampler state machine
+
+skinparam shadowing false
+
+[*] --> EMPTY
+
+EMPTY --> ARMED_RECORD : pad hold\nquantization enabled
+EMPTY --> RECORDING : pad hold\nquantization off
+STOPPED --> ARMED_RECORD : pad hold\nquantization enabled
+STOPPED --> RECORDING : pad hold\nquantization off
+
+ARMED_RECORD --> RECORDING : next beat/bar boundary
+RECORDING --> ARMED_FINISH : pad release\nquantization enabled
+RECORDING --> STOPPED : maximum sample length reached
+
+ARMED_FINISH --> STOPPED : next beat/bar boundary\nclose recording, stay silent
+
+STOPPED --> ONE_SHOT : pad press\nplay from frame 0
+ONE_SHOT --> ONE_SHOT : pad press\nretrigger from frame 0
+ONE_SHOT --> STOPPED : end of stored audio
+ONE_SHOT --> ARMED_RECORD : pad hold\ncancel playback and re-record
+
+note right of ONE_SHOT
+A pad press starts the sample immediately, so
+holding a loaded pad to re-record plays a short
+preview first. The preview is cut at the hold,
+before the quantized record boundary.
 end note
 @enduml
 ```
