@@ -110,9 +110,10 @@ void music_box_config_defaults(MusicBoxConfig *config)
     strcpy(config->display_i2c_device, "/dev/i2c-1");
     config->display_volume_seconds = 2u;
     config->volume_control_enabled = true;
+    config->volume_db_curve = true;
     config->volume_cc = 3u;
     strcpy(config->volume_mixer_card, "hw:wm8960soundcard");
-    strcpy(config->volume_mixer_control, "Speaker");
+    strcpy(config->volume_mixer_control, "Speaker,Headphone");
     config->aec_enabled = true;
     config->aec_taps = 128u;
     config->aec_delay_frames = 512u;
@@ -195,6 +196,8 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
             config->display_volume_seconds = (uint32_t)unsigned_value;
         } else if (strcmp(key, "volume_control_enabled") == 0) {
             valid = parse_bool(value, &config->volume_control_enabled);
+        } else if (strcmp(key, "volume_db_curve") == 0) {
+            valid = parse_bool(value, &config->volume_db_curve);
         } else if (strcmp(key, "volume_cc") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
             config->volume_cc = (uint8_t)unsigned_value;

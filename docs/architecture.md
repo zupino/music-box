@@ -113,6 +113,8 @@ end note
 | `loop_bank.c` | Four stereo buffers and loop state machines |
 | `echo_cancel.c` | Built-in two-reference/two-microphone NLMS AEC |
 | `rt_queue.c` | Lock-free SPSC command and status queues |
+| `volume.c` | ALSA simple-mixer hardware output volume driven by a MIDI knob |
+| `display.c` | SSD1306 beat, recording-status and volume screens |
 
 ## Thread ownership
 
@@ -236,16 +238,21 @@ component "MIDI classifier" as CLASSIFY
 component "Loop command queue" as COMMANDS
 component "Audio-thread loop state machines" as STATES
 component "FluidSynth MIDI input" as FLUID <<sink>>
+component "ALSA simple mixer\nSpeaker / Headphone" as MIXER <<sink>>
 
 MPD --> ALSA : notes, note-off, CC,
 ALSA --> CLASSIFY
 CLASSIFY --> COMMANDS : notes 52-55\nrecord / finish / stop
 COMMANDS --> STATES : consume in JACK callback
+CLASSIFY --> MIXER : volume CC\nhardware playback volume
 CLASSIFY --> FLUID : all other MIDI events
 
 note right of CLASSIFY
-Loop-control notes are consumed and are
-not forwarded to FluidSynth.
+Loop-control notes and the volume
+controller are consumed and are not
+forwarded to FluidSynth. The mixer is
+written from the MIDI thread, never
+from the JACK callback.
 end note
 @enduml
 ```

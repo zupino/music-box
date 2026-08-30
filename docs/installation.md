@@ -54,6 +54,24 @@ arecord -l
 
 DKMS must say `installed`, not only `added`.
 
+## Disable the onboard Raspberry Pi audio (recommended)
+
+The `bcm2835` headphone and HDMI devices are unnecessary here and make card
+numbering unpredictable. Music Box, JACK and the volume control all address the
+HAT by name (`hw:wm8960soundcard`), so this is optional, but it removes a
+common source of "audio goes to the wrong device" confusion.
+
+```bash
+sudo sed -i 's/^dtparam=audio=on/dtparam=audio=off/' /boot/firmware/config.txt
+sudo sed -i 's/^dtoverlay=vc4-kms-v3d$/dtoverlay=vc4-kms-v3d,noaudio/' /boot/firmware/config.txt
+printf 'blacklist snd_bcm2835\n' | sudo tee /etc/modprobe.d/music-box-no-onboard-audio.conf
+sudo reboot
+```
+
+Older Raspbian uses `/boot/config.txt`. Afterwards `aplay -l` should list only
+`wm8960soundcard`; `music-box-check` reports whether the module is still
+loaded.
+
 ## Install Music Box
 
 ```bash

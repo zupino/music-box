@@ -53,7 +53,7 @@ build/test_echo_cancel: tests/test_echo_cancel.c src/echo_cancel.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lm
 
 build/test_volume: tests/test_volume.c src/volume.c | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lasound
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lasound -lm
 
 test: $(TEST_BINS)
 	@for test_binary in $(TEST_BINS); do \

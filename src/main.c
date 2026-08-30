@@ -114,7 +114,7 @@ int main(int argc, char **argv)
     if (music_box_volume_available(&volume))
         printf("Volume: CC %u controls mixer '%s', currently %u%%\n",
                (unsigned int)config.volume_cc,
-               music_box_volume_control_name(&volume),
+               music_box_volume_control_summary(&volume),
                (unsigned int)music_box_volume_percent(&volume));
     else
         printf("Volume: MIDI control disabled\n");
