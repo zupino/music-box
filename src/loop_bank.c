@@ -16,9 +16,19 @@ static void emit_event(MusicBoxLoopBank *bank,
     const MusicBoxEvent event = {
         .type = type,
         .slot = slot,
+        .bank = (uint8_t)bank->mode,
         .value = value,
     };
     (void)music_box_event_queue_push(bank->events, &event);
+}
+
+static void stop_one_shot(MusicBoxLoopBank *bank, uint8_t slot_index)
+{
+    MusicBoxLoopSlot *slot = &bank->slots[slot_index];
+
+    slot->state = MUSIC_BOX_LOOP_STOPPED;
+    slot->play_position = 0u;
+    emit_event(bank, MUSIC_BOX_EVENT_SAMPLE_FINISHED, slot_index, 0u);
 }
 
 static void start_recording(MusicBoxLoopBank *bank,
@@ -48,7 +58,10 @@ static void finish_recording(MusicBoxLoopBank *bank, uint8_t slot_index)
         return;
     }
 
-    slot->state = MUSIC_BOX_LOOP_PLAYING;
+    /* A loop repeats immediately; a sample waits for the next pad tap. */
+    slot->state = bank->mode == MUSIC_BOX_MODE_SAMPLER
+                      ? MUSIC_BOX_LOOP_STOPPED
+                      : MUSIC_BOX_LOOP_PLAYING;
     emit_event(bank,
                MUSIC_BOX_EVENT_RECORD_FINISHED,
                slot_index,
@@ -57,20 +70,22 @@ static void finish_recording(MusicBoxLoopBank *bank, uint8_t slot_index)
 
 bool music_box_loop_bank_init(MusicBoxLoopBank *bank,
                               uint32_t sample_rate,
-                              uint32_t max_loop_seconds,
+                              uint32_t max_seconds,
                               MusicBoxQuantizeMode quantize_mode,
+                              MusicBoxMode mode,
                               MusicBoxEventQueue *events)
 {
-    if (bank == NULL || sample_rate == 0u || max_loop_seconds == 0u) {
+    if (bank == NULL || sample_rate == 0u || max_seconds == 0u) {
         return false;
     }
 
     memset(bank, 0, sizeof(*bank));
     bank->quantize_mode = quantize_mode;
+    bank->mode = mode;
     bank->events = events;
 
     const size_t capacity =
-        (size_t)sample_rate * (size_t)max_loop_seconds;
+        (size_t)sample_rate * (size_t)max_seconds;
 
     for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
         MusicBoxLoopSlot *slot = &bank->slots[index];
@@ -102,11 +117,88 @@ void music_box_loop_bank_destroy(MusicBoxLoopBank *bank)
     }
 }
 
+static void arm_recording(MusicBoxLoopBank *bank,
+                          uint8_t slot_index,
+                          const MusicBoxTransport *transport)
+{
+    MusicBoxLoopSlot *slot = &bank->slots[slot_index];
+
+    slot->finish_after_start = false;
+    if (bank->quantize_mode == MUSIC_BOX_QUANTIZE_OFF) {
+        start_recording(bank, slot_index, transport);
+    } else {
+        slot->state = MUSIC_BOX_LOOP_ARMED_RECORD;
+        emit_event(bank, MUSIC_BOX_EVENT_RECORD_ARMED, slot_index, 0u);
+    }
+}
+
+/*
+ * A sampler pad triggers on the press so the sample is heard immediately. The
+ * gesture that records instead arrives later as a hold.
+ */
+static void sampler_pad_press(MusicBoxLoopBank *bank, uint8_t slot_index)
+{
+    MusicBoxLoopSlot *slot = &bank->slots[slot_index];
+
+    switch (slot->state) {
+    case MUSIC_BOX_LOOP_STOPPED:
+        if (slot->recorded_frames == 0u) {
+            break;
+        }
+        slot->play_position = 0u;
+        slot->state = MUSIC_BOX_LOOP_ONE_SHOT;
+        emit_event(bank,
+                   MUSIC_BOX_EVENT_SAMPLE_STARTED,
+                   slot_index,
+                   slot->recorded_frames);
+        break;
+
+    case MUSIC_BOX_LOOP_ONE_SHOT:
+        /* Retrigger from the start; the pad already reads as playing. */
+        slot->play_position = 0u;
+        break;
+
+    case MUSIC_BOX_LOOP_EMPTY:
+    case MUSIC_BOX_LOOP_ARMED_RECORD:
+    case MUSIC_BOX_LOOP_RECORDING:
+    case MUSIC_BOX_LOOP_ARMED_FINISH:
+    default:
+        break;
+    }
+}
+
+void music_box_loop_bank_pad_hold(MusicBoxLoopBank *bank,
+                                  uint8_t slot_index,
+                                  const MusicBoxTransport *transport)
+{
+    if (slot_index >= MUSIC_BOX_LOOP_COUNT ||
+        bank->mode != MUSIC_BOX_MODE_SAMPLER) {
+        return;
+    }
+
+    MusicBoxLoopSlot *slot = &bank->slots[slot_index];
+
+    /* Recording over a sample silences the preview started by the press. */
+    if (slot->state == MUSIC_BOX_LOOP_ONE_SHOT) {
+        stop_one_shot(bank, slot_index);
+    }
+    if (slot->state != MUSIC_BOX_LOOP_EMPTY &&
+        slot->state != MUSIC_BOX_LOOP_STOPPED) {
+        return;
+    }
+    arm_recording(bank, slot_index, transport);
+}
+
 void music_box_loop_bank_pad_press(MusicBoxLoopBank *bank,
                                    uint8_t slot_index,
                                    const MusicBoxTransport *transport)
 {
     if (slot_index >= MUSIC_BOX_LOOP_COUNT) {
+        return;
+    }
+
+    if (bank->mode == MUSIC_BOX_MODE_SAMPLER) {
+        sampler_pad_press(bank, slot_index);
         return;
     }
 
@@ -131,18 +223,13 @@ void music_box_loop_bank_pad_press(MusicBoxLoopBank *bank,
 
     case MUSIC_BOX_LOOP_EMPTY:
     case MUSIC_BOX_LOOP_STOPPED:
-        slot->finish_after_start = false;
-        if (bank->quantize_mode == MUSIC_BOX_QUANTIZE_OFF) {
-            start_recording(bank, slot_index, transport);
-        } else {
-            slot->state = MUSIC_BOX_LOOP_ARMED_RECORD;
-            emit_event(bank, MUSIC_BOX_EVENT_RECORD_ARMED, slot_index, 0u);
-        }
+        arm_recording(bank, slot_index, transport);
         break;
 
     case MUSIC_BOX_LOOP_ARMED_RECORD:
     case MUSIC_BOX_LOOP_RECORDING:
     case MUSIC_BOX_LOOP_ARMED_FINISH:
+    case MUSIC_BOX_LOOP_ONE_SHOT:
     default:
         /* Duplicate Note On events are ignored while recording is active. */
         break;
@@ -183,7 +270,9 @@ void music_box_loop_bank_pad_release(MusicBoxLoopBank *bank,
     case MUSIC_BOX_LOOP_ARMED_STOP:
     case MUSIC_BOX_LOOP_STOPPED:
     case MUSIC_BOX_LOOP_EMPTY:
+    case MUSIC_BOX_LOOP_ONE_SHOT:
     default:
+        /* A sample released before the hold threshold just keeps playing. */
         break;
     }
 }
@@ -226,6 +315,7 @@ void music_box_loop_bank_apply_boundary(MusicBoxLoopBank *bank,
         case MUSIC_BOX_LOOP_EMPTY:
         case MUSIC_BOX_LOOP_PLAYING:
         case MUSIC_BOX_LOOP_STOPPED:
+        case MUSIC_BOX_LOOP_ONE_SHOT:
         default:
             break;
         }
@@ -239,11 +329,12 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
     float mixed_left = 0.0f;
     float mixed_right = 0.0f;
 
-    for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
         MusicBoxLoopSlot *slot = &bank->slots[index];
-        if ((slot->state != MUSIC_BOX_LOOP_PLAYING &&
-             slot->state != MUSIC_BOX_LOOP_ARMED_STOP) ||
-            slot->recorded_frames == 0u) {
+        const bool one_shot = slot->state == MUSIC_BOX_LOOP_ONE_SHOT;
+        const bool repeating = slot->state == MUSIC_BOX_LOOP_PLAYING ||
+                               slot->state == MUSIC_BOX_LOOP_ARMED_STOP;
+        if ((!one_shot && !repeating) || slot->recorded_frames == 0u) {
             continue;
         }
 
@@ -251,8 +342,13 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
         mixed_right += slot->right[slot->play_position];
 
         slot->play_position++;
-        if (slot->play_position >= slot->recorded_frames) {
-            slot->play_position = 0u;
+        if (slot->play_position < slot->recorded_frames) {
+            continue;
+        }
+        slot->play_position = 0u;
+        /* A sample ends at its own tail instead of wrapping like a loop. */
+        if (one_shot) {
+            stop_one_shot(bank, index);
         }
     }
 
