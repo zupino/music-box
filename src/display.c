@@ -38,6 +38,7 @@ static const Glyph font[] = {
     {'O', {0x3e, 0x41, 0x41, 0x41, 0x3e}},
     {'P', {0x7f, 0x09, 0x09, 0x09, 0x06}},
     {'R', {0x7f, 0x09, 0x19, 0x29, 0x46}},
+    {'S', {0x46, 0x49, 0x49, 0x49, 0x31}},
     {'U', {0x3f, 0x40, 0x40, 0x40, 0x3f}},
     {'V', {0x1f, 0x20, 0x40, 0x20, 0x1f}},
     {'%', {0x63, 0x13, 0x08, 0x64, 0x63}},
@@ -71,26 +72,11 @@ static void draw_text(MusicBoxDisplay *display, unsigned int x,
     }
 }
 
-static void draw_note(MusicBoxDisplay *display)
+static void draw_text_right(MusicBoxDisplay *display, unsigned int right_x,
+                            unsigned int y, const char *text)
 {
-    for (unsigned int y = 1u; y < 8u; ++y) set_pixel(display, 7u, y);
-    for (unsigned int x = 7u; x < 11u; ++x) set_pixel(display, x, 1u);
-    set_pixel(display, 5u, 7u);
-    set_pixel(display, 6u, 6u);
-    set_pixel(display, 6u, 7u);
-}
-
-static void draw_circle(MusicBoxDisplay *display, unsigned int center_x,
-                        bool filled)
-{
-    for (int y = -4; y <= 4; ++y) {
-        for (int x = -4; x <= 4; ++x) {
-            const int distance = x * x + y * y;
-            if ((filled && distance <= 16) ||
-                (!filled && distance >= 11 && distance <= 19))
-                set_pixel(display, center_x + (unsigned int)x, 17u + (unsigned int)y);
-        }
-    }
+    const unsigned int width = (unsigned int)strlen(text) * 6u;
+    draw_text(display, right_x > width ? right_x - width : 0u, y, text);
 }
 
 static void fill_rectangle(MusicBoxDisplay *display, unsigned int x,
@@ -111,6 +97,24 @@ static void draw_rectangle(MusicBoxDisplay *display, unsigned int x,
     fill_rectangle(display, x, y + height - 1u, width, 1u);
     fill_rectangle(display, x, y, 1u, height);
     fill_rectangle(display, x + width - 1u, y, 1u, height);
+}
+
+/* Flips a block so text already drawn inside it reads as knocked-out pixels. */
+static void invert_rectangle(MusicBoxDisplay *display, unsigned int x,
+                             unsigned int y, unsigned int width,
+                             unsigned int height)
+{
+    for (unsigned int column = 0u; column < width; ++column) {
+        for (unsigned int row = 0u; row < height; ++row) {
+            const unsigned int pixel_x = x + column;
+            const unsigned int pixel_y = y + row;
+            if (pixel_x >= MUSIC_BOX_DISPLAY_WIDTH ||
+                pixel_y >= MUSIC_BOX_DISPLAY_HEIGHT)
+                continue;
+            display->pixels[pixel_x + (pixel_y / 8u) * MUSIC_BOX_DISPLAY_WIDTH] ^=
+                (uint8_t)(1u << (pixel_y % 8u));
+        }
+    }
 }
 
 static uint64_t monotonic_milliseconds(void)
@@ -135,36 +139,91 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
     return true;
 }
 
+/*
+ * Screen layout, 128x32:
+ *   rows 0-6    mode name, and either the tempo or the recording state;
+ *   rows 9-23   one box per pad, showing what each pad holds right now;
+ *   rows 27-31  the beat footer, present on every screen.
+ * Each column is 32 pixels wide, so a pad box sits directly above its beat bar.
+ */
+#define SLOT_COLUMN_PITCH 32u
+#define SLOT_ORIGIN_X 2u
+#define SLOT_BOX_WIDTH 28u
+#define SLOT_BOX_TOP 9u
+#define SLOT_BOX_HEIGHT 15u
+#define BEAT_BAR_TOP 27u
+#define BEAT_BAR_HEIGHT 5u
+
+static unsigned int slot_column_x(unsigned int index)
+{
+    return SLOT_ORIGIN_X + index * SLOT_COLUMN_PITCH;
+}
+
+/* Four bars, the current one solid. Shown in every mode as a footer. */
+static void draw_beat_footer(MusicBoxDisplay *display)
+{
+    for (unsigned int beat = 0u; beat < 4u; ++beat) {
+        const unsigned int x = slot_column_x(beat);
+        if (display->beat == beat)
+            fill_rectangle(display, x, BEAT_BAR_TOP, SLOT_BOX_WIDTH, BEAT_BAR_HEIGHT);
+        else
+            draw_rectangle(display, x, BEAT_BAR_TOP, SLOT_BOX_WIDTH, BEAT_BAR_HEIGHT);
+    }
+}
+
+/*
+ * Pad boxes. Sounding pads are inverted, so in loop mode the filled boxes are
+ * the loops currently playing back, and in sampler mode an outlined box is a
+ * pad with a sample ready to trigger.
+ */
+static void draw_slot_boxes(MusicBoxDisplay *display)
+{
+    const unsigned int mode = (unsigned int)display->mode;
+    for (unsigned int slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot) {
+        const unsigned int x = slot_column_x(slot);
+        const uint8_t bit = (uint8_t)(1u << slot);
+        const char number[2] = {(char)('1' + slot), '\0'};
+        draw_text(display, x + (SLOT_BOX_WIDTH - 5u) / 2u, SLOT_BOX_TOP + 4u, number);
+        if ((display->playing_slots[mode] & bit) != 0u) {
+            invert_rectangle(display, x, SLOT_BOX_TOP, SLOT_BOX_WIDTH, SLOT_BOX_HEIGHT);
+            continue;
+        }
+        if ((display->recording_slots[mode] & bit) != 0u)
+            draw_rectangle(display, x + 1u, SLOT_BOX_TOP + 1u, SLOT_BOX_WIDTH - 2u,
+                           SLOT_BOX_HEIGHT - 2u);
+        if (((display->loaded_slots[mode] | display->recording_slots[mode] |
+              display->armed_slots[mode]) & bit) != 0u)
+            draw_rectangle(display, x, SLOT_BOX_TOP, SLOT_BOX_WIDTH, SLOT_BOX_HEIGHT);
+    }
+}
+
 static void draw_status_screen(MusicBoxDisplay *display)
 {
-    draw_note(display);
+    const unsigned int mode = (unsigned int)display->mode;
+    draw_text(display, SLOT_ORIGIN_X, 0u,
+              display->mode == MUSIC_BOX_MODE_SAMPLER ? "SAMPLER" : "LOOP");
 
     char tempo[16];
     (void)snprintf(tempo, sizeof(tempo), "%u BPM",
                    (unsigned int)((display->tempo_millibpm + 500u) / 1000u));
-    draw_text(display, 15u, 0u, tempo);
-    if (display->recording_slots != 0u) draw_text(display, 104u, 0u, "REC");
-    else if (display->armed_slots != 0u) draw_text(display, 98u, 0u, "ARMED");
+    const char *right = tempo;
+    if (display->recording_slots[mode] != 0u) right = "REC";
+    else if (display->armed_slots[mode] != 0u) right = "ARMED";
+    draw_text_right(display, MUSIC_BOX_DISPLAY_WIDTH - 2u, 0u, right);
 
-    static const unsigned int centers[4] = {14u, 42u, 70u, 98u};
-    for (unsigned int beat = 0u; beat < 4u; ++beat) {
-        draw_circle(display, centers[beat], display->beat == beat);
-        char number[2] = {(char)('1' + beat), '\0'};
-        draw_text(display, centers[beat] - 2u, 25u, number);
-    }
+    draw_slot_boxes(display);
 }
 
-/* Bar geometry: a 124x17 frame with a 120x13 fill area inside it. */
+/* Bar geometry: a 124x13 frame with a 120x9 fill area inside it. */
 static void draw_volume_screen(MusicBoxDisplay *display)
 {
     const unsigned int percent = display->volume_percent;
     char value[8];
     (void)snprintf(value, sizeof(value), "%u%%", percent);
     draw_text(display, 2u, 0u, "VOLUME");
-    draw_text(display, MUSIC_BOX_DISPLAY_WIDTH - 2u - (unsigned int)strlen(value) * 6u,
-              0u, value);
-    draw_rectangle(display, 2u, 13u, 124u, 17u);
-    fill_rectangle(display, 4u, 15u, (120u * percent + 50u) / 100u, 13u);
+    draw_text_right(display, MUSIC_BOX_DISPLAY_WIDTH - 2u, 0u, value);
+    draw_rectangle(display, 2u, 11u, 124u, 13u);
+    fill_rectangle(display, 4u, 13u, (120u * percent + 50u) / 100u, 9u);
 }
 
 static bool refresh(MusicBoxDisplay *display)
@@ -173,6 +232,7 @@ static bool refresh(MusicBoxDisplay *display)
     memset(display->pixels, 0, sizeof(display->pixels));
     if (display->volume_visible) draw_volume_screen(display);
     else draw_status_screen(display);
+    draw_beat_footer(display);
 
     const uint8_t position[] = {0x21, 0x00, 0x7f, 0x22, 0x00, 0x03};
     return send_bytes(display->fd, 0x00u, position, sizeof(position)) &&
@@ -226,20 +286,46 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
                                     const MusicBoxEvent *event)
 {
     if (!display->enabled) return;
-    switch (event->type) {
-    case MUSIC_BOX_EVENT_BEAT:
+    /* The beat index counts a whole bar, which can be longer than the four
+       footer bars, so it is not a slot number and skips the slot guard. */
+    if (event->type == MUSIC_BOX_EVENT_BEAT) {
         display->beat = event->slot;
-        break;
+        commit(display);
+        return;
+    }
+    if (event->bank >= MUSIC_BOX_MODE_COUNT || event->slot >= MUSIC_BOX_LOOP_COUNT)
+        return;
+    const unsigned int bank = event->bank;
+    const uint8_t bit = (uint8_t)(1u << event->slot);
+    switch (event->type) {
     case MUSIC_BOX_EVENT_RECORD_ARMED:
-        display->armed_slots |= (uint8_t)(1u << event->slot);
+        display->armed_slots[bank] |= bit;
         break;
     case MUSIC_BOX_EVENT_RECORD_STARTED:
-        display->armed_slots &= (uint8_t)~(1u << event->slot);
-        display->recording_slots |= (uint8_t)(1u << event->slot);
+        display->armed_slots[bank] &= (uint8_t)~bit;
+        display->recording_slots[bank] |= bit;
+        /* The previous take is gone as soon as the new one starts. */
+        display->loaded_slots[bank] &= (uint8_t)~bit;
+        display->playing_slots[bank] &= (uint8_t)~bit;
         break;
     case MUSIC_BOX_EVENT_RECORD_FINISHED:
-        display->recording_slots &= (uint8_t)~(1u << event->slot);
-        display->armed_slots &= (uint8_t)~(1u << event->slot);
+        display->recording_slots[bank] &= (uint8_t)~bit;
+        display->armed_slots[bank] &= (uint8_t)~bit;
+        display->loaded_slots[bank] |= bit;
+        /* A closed loop plays at once; a sample waits to be triggered. */
+        if (bank == (unsigned int)MUSIC_BOX_MODE_LOOP) display->playing_slots[bank] |= bit;
+        break;
+    case MUSIC_BOX_EVENT_LOOP_STOPPED:
+        display->playing_slots[bank] &= (uint8_t)~bit;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_STARTED:
+        display->playing_slots[bank] |= bit;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_FINISHED:
+        display->playing_slots[bank] &= (uint8_t)~bit;
+        break;
+    case MUSIC_BOX_EVENT_MODE_CHANGED:
+        display->mode = (MusicBoxMode)event->value;
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         display->tempo_millibpm = (uint32_t)event->value;
@@ -247,8 +333,6 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     default:
         return;
     }
-    /* The volume indication owns the screen until it times out. */
-    if (display->volume_visible) return;
     commit(display);
 }
 
