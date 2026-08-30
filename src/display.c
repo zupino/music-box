@@ -99,24 +99,6 @@ static void draw_rectangle(MusicBoxDisplay *display, unsigned int x,
     fill_rectangle(display, x + width - 1u, y, 1u, height);
 }
 
-/* Flips a block so text already drawn inside it reads as knocked-out pixels. */
-static void invert_rectangle(MusicBoxDisplay *display, unsigned int x,
-                             unsigned int y, unsigned int width,
-                             unsigned int height)
-{
-    for (unsigned int column = 0u; column < width; ++column) {
-        for (unsigned int row = 0u; row < height; ++row) {
-            const unsigned int pixel_x = x + column;
-            const unsigned int pixel_y = y + row;
-            if (pixel_x >= MUSIC_BOX_DISPLAY_WIDTH ||
-                pixel_y >= MUSIC_BOX_DISPLAY_HEIGHT)
-                continue;
-            display->pixels[pixel_x + (pixel_y / 8u) * MUSIC_BOX_DISPLAY_WIDTH] ^=
-                (uint8_t)(1u << (pixel_y % 8u));
-        }
-    }
-}
-
 static uint64_t monotonic_milliseconds(void)
 {
     struct timespec time;
@@ -142,76 +124,115 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
 /*
  * Screen layout, 128x32:
  *   rows 0-6    mode name, and either the tempo or the recording state;
- *   rows 9-23   one box per pad, showing what each pad holds right now;
- *   rows 27-31  the beat footer, present on every screen.
- * Each column is 32 pixels wide, so a pad box sits directly above its beat bar.
+ *   rows 7-25   a 4x4 grid mirroring the MPD218 pads;
+ *   rows 28-31  the beat footer, present on every screen.
+ * Grid columns are 32 pixels apart, so a pad column sits directly above its
+ * beat bar. Sixteen cells leave no room for digits, which is no loss: the grid
+ * has the same shape as the controller, so position identifies the pad.
  */
-#define SLOT_COLUMN_PITCH 32u
-#define SLOT_ORIGIN_X 2u
-#define SLOT_BOX_WIDTH 28u
-#define SLOT_BOX_TOP 9u
-#define SLOT_BOX_HEIGHT 15u
-#define BEAT_BAR_TOP 27u
-#define BEAT_BAR_HEIGHT 5u
+#define PAD_COLUMN_PITCH 32u
+#define PAD_ROW_PITCH 5u
+#define PAD_ORIGIN_X 2u
+#define PAD_GRID_TOP 7u
+#define PAD_WIDTH 28u
+#define PAD_HEIGHT 4u
+#define BEAT_BAR_TOP 28u
+#define BEAT_BAR_HEIGHT 4u
+#define BLINK_PERIOD_MILLISECONDS 300u
 
-static unsigned int slot_column_x(unsigned int index)
+static unsigned int pad_column_x(unsigned int column)
 {
-    return SLOT_ORIGIN_X + index * SLOT_COLUMN_PITCH;
+    return PAD_ORIGIN_X + column * PAD_COLUMN_PITCH;
+}
+
+/* Vertical stripes: reads as "sounding" without reading as a solid block. */
+static void hatch_rectangle(MusicBoxDisplay *display, unsigned int x,
+                            unsigned int y, unsigned int width,
+                            unsigned int height)
+{
+    for (unsigned int column = 0u; column < width; column += 2u)
+        fill_rectangle(display, x + column, y, 1u, height);
 }
 
 /* Four bars, the current one solid. Shown in every mode as a footer. */
 static void draw_beat_footer(MusicBoxDisplay *display)
 {
-    for (unsigned int beat = 0u; beat < 4u; ++beat) {
-        const unsigned int x = slot_column_x(beat);
+    for (unsigned int beat = 0u; beat < MUSIC_BOX_PAD_COLUMNS; ++beat) {
+        const unsigned int x = pad_column_x(beat);
         if (display->beat == beat)
-            fill_rectangle(display, x, BEAT_BAR_TOP, SLOT_BOX_WIDTH, BEAT_BAR_HEIGHT);
+            fill_rectangle(display, x, BEAT_BAR_TOP, PAD_WIDTH, BEAT_BAR_HEIGHT);
         else
-            draw_rectangle(display, x, BEAT_BAR_TOP, SLOT_BOX_WIDTH, BEAT_BAR_HEIGHT);
+            draw_rectangle(display, x, BEAT_BAR_TOP, PAD_WIDTH, BEAT_BAR_HEIGHT);
     }
 }
 
 /*
- * Pad boxes. Sounding pads are inverted, so in loop mode the filled boxes are
- * the loops currently playing back, and in sampler mode an outlined box is a
- * pad with a sample ready to trigger.
+ * One cell per pad, laid out like the controller: slot 0 is bottom-left.
+ *
+ *   blank     the pad has no note assigned
+ *   baseline  mapped but empty
+ *   outline   holds audio, silent
+ *   solid     sounding
+ *   hatched   sounding out this cycle, stopping at the next boundary
+ *   blinking  armed or recording
  */
-static void draw_slot_boxes(MusicBoxDisplay *display)
+static void draw_pad_grid(MusicBoxDisplay *display)
 {
     const unsigned int mode = (unsigned int)display->mode;
+    const uint16_t busy =
+        (uint16_t)(display->armed_slots[mode] | display->recording_slots[mode]);
+
     for (unsigned int slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot) {
-        const unsigned int x = slot_column_x(slot);
-        const uint8_t bit = (uint8_t)(1u << slot);
-        const char number[2] = {(char)('1' + slot), '\0'};
-        draw_text(display, x + (SLOT_BOX_WIDTH - 5u) / 2u, SLOT_BOX_TOP + 4u, number);
-        if ((display->playing_slots[mode] & bit) != 0u) {
-            invert_rectangle(display, x, SLOT_BOX_TOP, SLOT_BOX_WIDTH, SLOT_BOX_HEIGHT);
-            continue;
+        const uint16_t bit = (uint16_t)(1u << slot);
+        if ((display->mapped_slots & bit) == 0u) continue;
+        const unsigned int x = pad_column_x(slot % MUSIC_BOX_PAD_COLUMNS);
+        const unsigned int row =
+            MUSIC_BOX_PAD_ROWS - 1u - slot / MUSIC_BOX_PAD_COLUMNS;
+        const unsigned int y = PAD_GRID_TOP + row * PAD_ROW_PITCH;
+
+        if ((busy & bit) != 0u) {
+            if (display->blink_on) fill_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+            else draw_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+        } else if ((display->pending_stop_slots[mode] & bit) != 0u) {
+            hatch_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+        } else if ((display->playing_slots[mode] & bit) != 0u) {
+            fill_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+        } else if ((display->loaded_slots[mode] & bit) != 0u) {
+            draw_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+        } else {
+            fill_rectangle(display, x, y + PAD_HEIGHT - 1u, PAD_WIDTH, 1u);
         }
-        if ((display->recording_slots[mode] & bit) != 0u)
-            draw_rectangle(display, x + 1u, SLOT_BOX_TOP + 1u, SLOT_BOX_WIDTH - 2u,
-                           SLOT_BOX_HEIGHT - 2u);
-        if (((display->loaded_slots[mode] | display->recording_slots[mode] |
-              display->armed_slots[mode]) & bit) != 0u)
-            draw_rectangle(display, x, SLOT_BOX_TOP, SLOT_BOX_WIDTH, SLOT_BOX_HEIGHT);
     }
+}
+
+/* Lowest set bit, as a 1-based pad number for the header. */
+static unsigned int first_slot(uint16_t mask)
+{
+    unsigned int slot = 0u;
+    while (slot < MUSIC_BOX_LOOP_COUNT && (mask & (uint16_t)(1u << slot)) == 0u) ++slot;
+    return slot + 1u;
 }
 
 static void draw_status_screen(MusicBoxDisplay *display)
 {
     const unsigned int mode = (unsigned int)display->mode;
-    draw_text(display, SLOT_ORIGIN_X, 0u,
+    draw_text(display, PAD_ORIGIN_X, 0u,
               display->mode == MUSIC_BOX_MODE_SAMPLER ? "SAMPLER" : "LOOP");
 
-    char tempo[16];
-    (void)snprintf(tempo, sizeof(tempo), "%u BPM",
-                   (unsigned int)((display->tempo_millibpm + 500u) / 1000u));
-    const char *right = tempo;
-    if (display->recording_slots[mode] != 0u) right = "REC";
-    else if (display->armed_slots[mode] != 0u) right = "ARMED";
+    /* With sixteen pads the state has to name the pad it belongs to. */
+    char right[16];
+    if (display->recording_slots[mode] != 0u)
+        (void)snprintf(right, sizeof(right), "REC %u",
+                       first_slot(display->recording_slots[mode]));
+    else if (display->armed_slots[mode] != 0u)
+        (void)snprintf(right, sizeof(right), "ARM %u",
+                       first_slot(display->armed_slots[mode]));
+    else
+        (void)snprintf(right, sizeof(right), "%u BPM",
+                       (unsigned int)((display->tempo_millibpm + 500u) / 1000u));
     draw_text_right(display, MUSIC_BOX_DISPLAY_WIDTH - 2u, 0u, right);
 
-    draw_slot_boxes(display);
+    draw_pad_grid(display);
 }
 
 /* Bar geometry: a 124x13 frame with a 120x9 fill area inside it. */
@@ -247,6 +268,10 @@ bool music_box_display_init(MusicBoxDisplay *display,
     display->fd = -1;
     display->tempo_millibpm = config->tempo_millibpm;
     display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
+    display->blink_on = true;
+    for (unsigned int slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot)
+        if (config->loop_notes[slot] != MUSIC_BOX_NOTE_UNMAPPED)
+            display->mapped_slots |= (uint16_t)(1u << slot);
     if (!config->display_enabled) return true;
 
     display->fd = open(config->display_i2c_device, O_RDWR);
@@ -296,33 +321,47 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     if (event->bank >= MUSIC_BOX_MODE_COUNT || event->slot >= MUSIC_BOX_LOOP_COUNT)
         return;
     const unsigned int bank = event->bank;
-    const uint8_t bit = (uint8_t)(1u << event->slot);
+    const uint16_t bit = (uint16_t)(1u << event->slot);
+    const uint16_t clear = (uint16_t)~bit;
     switch (event->type) {
     case MUSIC_BOX_EVENT_RECORD_ARMED:
         display->armed_slots[bank] |= bit;
+        /* Light the cell on the way in rather than at the next blink edge. */
+        display->blink_on = true;
         break;
     case MUSIC_BOX_EVENT_RECORD_STARTED:
-        display->armed_slots[bank] &= (uint8_t)~bit;
+        display->armed_slots[bank] &= clear;
         display->recording_slots[bank] |= bit;
         /* The previous take is gone as soon as the new one starts. */
-        display->loaded_slots[bank] &= (uint8_t)~bit;
-        display->playing_slots[bank] &= (uint8_t)~bit;
+        display->loaded_slots[bank] &= clear;
+        display->playing_slots[bank] &= clear;
+        display->pending_stop_slots[bank] &= clear;
+        display->blink_on = true;
         break;
     case MUSIC_BOX_EVENT_RECORD_FINISHED:
-        display->recording_slots[bank] &= (uint8_t)~bit;
-        display->armed_slots[bank] &= (uint8_t)~bit;
+        display->recording_slots[bank] &= clear;
+        display->armed_slots[bank] &= clear;
         display->loaded_slots[bank] |= bit;
+        display->pending_stop_slots[bank] &= clear;
         /* A closed loop plays at once; a sample waits to be triggered. */
         if (bank == (unsigned int)MUSIC_BOX_MODE_LOOP) display->playing_slots[bank] |= bit;
         break;
+    case MUSIC_BOX_EVENT_LOOP_STOP_ARMED:
+        /* Still sounding out this cycle; it goes quiet at the next boundary. */
+        display->pending_stop_slots[bank] |= bit;
+        break;
+    case MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED:
+        display->pending_stop_slots[bank] &= clear;
+        break;
     case MUSIC_BOX_EVENT_LOOP_STOPPED:
-        display->playing_slots[bank] &= (uint8_t)~bit;
+        display->playing_slots[bank] &= clear;
+        display->pending_stop_slots[bank] &= clear;
         break;
     case MUSIC_BOX_EVENT_SAMPLE_STARTED:
         display->playing_slots[bank] |= bit;
         break;
     case MUSIC_BOX_EVENT_SAMPLE_FINISHED:
-        display->playing_slots[bank] &= (uint8_t)~bit;
+        display->playing_slots[bank] &= clear;
         break;
     case MUSIC_BOX_EVENT_MODE_CHANGED:
         display->mode = (MusicBoxMode)event->value;
@@ -349,9 +388,22 @@ void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent)
 
 void music_box_display_tick(MusicBoxDisplay *display)
 {
-    if (!display->enabled || !display->volume_visible) return;
-    if (monotonic_milliseconds() < display->volume_hide_at_milliseconds) return;
-    display->volume_visible = false;
+    if (!display->enabled) return;
+    const uint64_t now = monotonic_milliseconds();
+    if (display->volume_visible) {
+        if (now < display->volume_hide_at_milliseconds) return;
+        display->volume_visible = false;
+        commit(display);
+        return;
+    }
+    /* Armed and recording cells blink. This is the screen's only self-driven
+       cadence and it runs solely while one of them is pending, so an idle
+       Music Box still redraws only when something actually happens. */
+    const unsigned int mode = (unsigned int)display->mode;
+    if ((display->armed_slots[mode] | display->recording_slots[mode]) == 0u) return;
+    if (now < display->blink_at_milliseconds) return;
+    display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
+    display->blink_on = !display->blink_on;
     commit(display);
 }
 

@@ -268,6 +268,7 @@ void music_box_loop_bank_pad_press(MusicBoxLoopBank *bank,
     case MUSIC_BOX_LOOP_ARMED_STOP:
         /* A second press before the boundary cancels the pending stop. */
         slot->state = MUSIC_BOX_LOOP_PLAYING;
+        emit_event(bank, MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED, slot_index, 0u);
         break;
 
     case MUSIC_BOX_LOOP_EMPTY:
@@ -378,6 +379,7 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
     float mixed_left = 0.0f;
     float mixed_right = 0.0f;
 
+    bank->sounding = false;
     for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
         MusicBoxLoopSlot *slot = &bank->slots[index];
         const bool one_shot = slot->state == MUSIC_BOX_LOOP_ONE_SHOT;
@@ -389,6 +391,7 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
 
         mixed_left += slot->left[slot->play_position];
         mixed_right += slot->right[slot->play_position];
+        bank->sounding = true;
 
         slot->play_position++;
         if (slot->play_position < slot->recorded_frames) {
@@ -408,6 +411,19 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
 static void push_preroll(MusicBoxLoopBank *bank, float left, float right)
 {
     if (bank->preroll_capacity == 0u) return;
+    /*
+     * Tapping a loaded pad previews it, and the hold that turns the gesture
+     * into a recording only arrives afterwards, so the pre-roll window is
+     * exactly when the outgoing sample is loudest in the microphones. Drop the
+     * history rather than prefix the new take with the old one's bleed; the
+     * take then simply begins at the hold. Frames from before the press must
+     * go too, since they predate the gesture.
+     */
+    if (bank->sounding) {
+        bank->preroll_filled = 0u;
+        bank->preroll_position = 0u;
+        return;
+    }
     bank->preroll_left[bank->preroll_position] = left;
     bank->preroll_right[bank->preroll_position] = right;
     bank->preroll_position = (bank->preroll_position + 1u) % bank->preroll_capacity;
