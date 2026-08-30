@@ -10,6 +10,8 @@
 #include <stdint.h>
 
 #define MUSIC_BOX_NAME_LENGTH 64u
+/* MIDI notes are 0-127, so this cannot collide with a real mapping. */
+#define MUSIC_BOX_NOTE_UNMAPPED 0xffu
 
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];
@@ -20,6 +22,9 @@ typedef struct {
     uint32_t pad_hold_milliseconds;
     bool mode_control_enabled;
     uint8_t mode_cc;
+    /* Half-width of the dead band around the mode knob's midpoint, in CC
+       counts. Smaller means less rotation is needed to change mode. */
+    uint8_t mode_cc_hysteresis;
 
     uint32_t tempo_millibpm;
     uint32_t beats_per_bar;
@@ -55,5 +60,7 @@ void music_box_config_defaults(MusicBoxConfig *config);
 bool music_box_config_load(MusicBoxConfig *config, const char *path);
 const char *music_box_quantize_mode_name(MusicBoxQuantizeMode mode);
 const char *music_box_mode_name(MusicBoxMode mode);
+/* Number of pads with a note assigned; the rest are inert. */
+size_t music_box_config_mapped_pads(const MusicBoxConfig *config);
 
 #endif

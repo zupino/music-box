@@ -24,6 +24,7 @@ TEST_BINS = \
 	build/test_transport \
 	build/test_queue \
 	build/test_loop_bank \
+	build/test_config \
 	build/test_echo_cancel \
 	build/test_volume
 
@@ -47,6 +48,9 @@ build/test_queue: tests/test_queue.c src/rt_queue.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
 
 build/test_loop_bank: tests/test_loop_bank.c src/loop_bank.c src/transport.c src/rt_queue.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
+
+build/test_config: tests/test_config.c src/config.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
 
 build/test_echo_cancel: tests/test_echo_cancel.c src/echo_cancel.c | build

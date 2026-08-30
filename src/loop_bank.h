@@ -9,7 +9,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MUSIC_BOX_LOOP_COUNT 4u
+/* The MPD218's full 4x4 pad grid. Slot 0 is the bottom-left pad, matching the
+   note order the controller sends, so slot / 4 is a physical pad row. */
+#define MUSIC_BOX_LOOP_COUNT 16u
+#define MUSIC_BOX_PAD_COLUMNS 4u
+#define MUSIC_BOX_PAD_ROWS (MUSIC_BOX_LOOP_COUNT / MUSIC_BOX_PAD_COLUMNS)
 
 typedef enum {
     MUSIC_BOX_LOOP_EMPTY = 0,
@@ -46,6 +50,11 @@ typedef struct {
  * exactly the time its pad was down, but the press only becomes a recording
  * gesture once the pad has been held, so the head of the sample has already
  * gone past by then. Copying the ring in at record start recovers it.
+ *
+ * The ring only retains input captured while the bank itself was silent. What
+ * the bank plays reaches the microphones, and the echo canceller only reduces
+ * that bleed rather than removing it, so keeping those frames would paste the
+ * tail of the outgoing sample onto the head of its replacement.
  */
 typedef struct {
     MusicBoxLoopSlot slots[MUSIC_BOX_LOOP_COUNT];
@@ -56,6 +65,8 @@ typedef struct {
     size_t preroll_capacity;
     size_t preroll_position;
     size_t preroll_filled;
+    /* Set by the last mix when any slot of this bank contributed audio. */
+    bool sounding;
     MusicBoxEventQueue *events;
 } MusicBoxLoopBank;
 
