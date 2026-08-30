@@ -296,7 +296,7 @@ every symptom reported from the device.
 Add a second performance mode. Loop mode keeps today's behaviour. Sampler mode
 turns every pad into a one-shot recorder: a long press records, a tap plays the
 result once, a further long press replaces it. Knob 2 selects the mode, and the
-display shows the mode, what each pad holds, and a compact beat footer.
+display shows the mode, what each pad holds, and a compact beat indication.
 
 ### What was added
 - `src/rt_queue.h` — `MusicBoxMode`, the `PAD_HOLD` and `SET_MODE` commands, the
@@ -357,6 +357,8 @@ while recording, and inverted while sounding. The inversion is an XOR pass over
 the box after the digit is drawn, which is why `invert_rectangle` exists: the
 1-bit framebuffer only ORs pixels otherwise. The four beat circles and the note
 glyph are gone; the volume bar lost four rows to make room for the footer.
+
+(This layout was replaced twice as the pad count grew; see below.)
 
 Rendering was checked by compiling `display.c` into a throwaway harness that
 dumps the framebuffer as ASCII. Worth repeating for any layout change — it
@@ -542,13 +544,41 @@ the preview the performer is listening, not playing.
 The same fix covers a case not reported yet — one sampler pad playing a long
 sample while another is held to record would have poisoned that pad's head too.
 
-### Display: sixteen cells in nineteen rows
-Four numbered boxes became a 4x4 grid, which leaves each cell 28x4 pixels and no
-room for a digit. That is fine, and arguably better: the grid has the same shape
-as the controller, so position identifies the pad. Slot 0 is drawn bottom-left,
-matching how the MPD218 labels its pads and the order the notes are listed in.
+### Display: stop stacking, start aligning
+Four numbered boxes became a 4x4 grid, which leaves no room for a digit. That is
+fine, and arguably better: the grid has the same shape as the controller, so
+position identifies the pad. Slot 0 is drawn bottom-left, matching how the
+MPD218 labels its pads and the order the notes are listed in.
 
-Six cell states fit into four pixel rows as blank, baseline, outline, solid,
+The first attempt stacked the grid under a full-width header, and it was too
+tight: header, four cell rows and a footer do not fit in 32 rows with any room
+to breathe, and cells ended up 4 pixels tall with the header touching them.
+
+The fix was to stop fighting the aspect ratio. A 128x32 panel is wide and short,
+so nothing is stacked any more: the grid, the status text and the beat run as
+three columns. Dropping the bottom strip is what pays for the cells, because the
+grid then owns the panel's full height rather than sharing it with a header and
+a footer.
+
+The beat became a rail of four dots down the right edge, small when idle and a
+filled square on the current beat. It costs 5 pixels of width, which this panel
+has to spare, instead of 5 rows of height, which it does not. Cells went from
+28x4 through 16x6 to 14x7: narrower each time, and taller each time.
+
+Then everything went onto one rhythm, which is what made it look deliberate
+rather than merely roomier:
+
+- the beat dots took the grid's row pitch and sit centred on its rows;
+- the three text lines were spread over exactly the grid's height, flush with
+  its top and bottom row;
+- every gutter and every outer margin is the same 3 pixels;
+- the volume overlay's bar picked up the same margins and stops short of the
+  rail.
+
+Every one of those constants is derived from the cell size and gap rather than
+written out, so the rhythm cannot drift when a dimension changes.
+
+Six cell states fit into seven pixel rows as blank, baseline, outline, solid,
 hatched and blinking. Blinking is the screen's only self-driven cadence; it runs
 from `music_box_display_tick` and only while a pad is armed or recording, so an
 idle Music Box still redraws only on events. `invert_rectangle` went away with

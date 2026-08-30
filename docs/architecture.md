@@ -115,7 +115,7 @@ end note
 | `echo_cancel.c` | Built-in two-reference/two-microphone NLMS AEC |
 | `rt_queue.c` | Lock-free SPSC command and status queues |
 | `volume.c` | ALSA simple-mixer hardware output volume driven by a MIDI knob |
-| `display.c` | SSD1306 mode, pad-state, beat-footer and volume screens |
+| `display.c` | SSD1306 three-column screen: pad grid, status text, beat rail, plus the volume overlay |
 
 ## Thread ownership
 

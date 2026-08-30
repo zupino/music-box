@@ -122,28 +122,47 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
 }
 
 /*
- * Screen layout, 128x32:
- *   rows 0-6    mode name, and either the tempo or the recording state;
- *   rows 7-25   a 4x4 grid mirroring the MPD218 pads;
- *   rows 28-31  the beat footer, present on every screen.
- * Grid columns are 32 pixels apart, so a pad column sits directly above its
- * beat bar. Sixteen cells leave no room for digits, which is no loss: the grid
- * has the same shape as the controller, so position identifies the pad.
+ * Screen layout, 128x32. The panel is wide and short, so nothing is stacked:
+ * the pad grid, the status text and the beat run as three columns, which lets
+ * the grid use the full height instead of sharing it with a header and footer.
+ *
+ *   x 3-67    rows 0-30   a 4x4 grid mirroring the MPD218 pads
+ *   x 71      rows 0-31   a rule separating grid from status
+ *   x 75-116  rows 0-30   mode, tempo and record state, one per line
+ *   x 120-124 rows 0-30   the beat, four dots, the current one filled
+ *
+ * Every gutter is 3px and so is every outer margin. The dots share the grid's
+ * row pitch and the text lines are flush with its top and bottom, so all three
+ * columns run on one rhythm. Sixteen cells leave no room for digits, which is
+ * no loss: the grid has the same shape as the controller, so position
+ * identifies the pad.
  */
-#define PAD_COLUMN_PITCH 32u
-#define PAD_ROW_PITCH 5u
-#define PAD_ORIGIN_X 2u
-#define PAD_GRID_TOP 7u
-#define PAD_WIDTH 28u
-#define PAD_HEIGHT 4u
-#define BEAT_BAR_TOP 28u
-#define BEAT_BAR_HEIGHT 4u
-#define BLINK_PERIOD_MILLISECONDS 300u
+#define PAD_CELL_WIDTH 14u
+#define PAD_CELL_HEIGHT 7u
+#define PAD_CELL_GAP_X 3u
+#define PAD_CELL_GAP_Y 1u
+#define PAD_ORIGIN_X 3u
+#define PAD_GUTTER 3u
+#define PAD_COLUMN_PITCH (PAD_CELL_WIDTH + PAD_CELL_GAP_X)
+#define PAD_ROW_PITCH (PAD_CELL_HEIGHT + PAD_CELL_GAP_Y)
+#define PAD_GRID_WIDTH \
+    (MUSIC_BOX_PAD_COLUMNS * PAD_COLUMN_PITCH - PAD_CELL_GAP_X)
+#define PAD_GRID_HEIGHT \
+    (MUSIC_BOX_PAD_ROWS * PAD_ROW_PITCH - PAD_CELL_GAP_Y)
 
-static unsigned int pad_column_x(unsigned int column)
-{
-    return PAD_ORIGIN_X + column * PAD_COLUMN_PITCH;
-}
+#define STATUS_RULE_X (PAD_ORIGIN_X + PAD_GRID_WIDTH + PAD_GUTTER)
+#define STATUS_TEXT_X (STATUS_RULE_X + 1u + PAD_GUTTER)
+/* Three lines spread over exactly the grid's height: flush top and bottom. */
+#define STATUS_LINE_PITCH ((PAD_GRID_HEIGHT - 7u) / 2u)
+
+/* A rail of four dots, one per beat, on the grid's own row pitch. */
+#define BEAT_DOT_SIZE 5u
+#define BEAT_DOT_X (MUSIC_BOX_DISPLAY_WIDTH - PAD_GUTTER - BEAT_DOT_SIZE)
+#define BEAT_DOT_IDLE_SIZE 3u
+/* Everything except the beat rail has to stay left of this. */
+#define CONTENT_RIGHT_X (BEAT_DOT_X - PAD_GUTTER)
+
+#define BLINK_PERIOD_MILLISECONDS 300u
 
 /* Vertical stripes: reads as "sounding" without reading as a solid block. */
 static void hatch_rectangle(MusicBoxDisplay *display, unsigned int x,
@@ -154,15 +173,28 @@ static void hatch_rectangle(MusicBoxDisplay *display, unsigned int x,
         fill_rectangle(display, x + column, y, 1u, height);
 }
 
-/* Four bars, the current one solid. Shown in every mode as a footer. */
-static void draw_beat_footer(MusicBoxDisplay *display)
+static unsigned int pad_row_y(unsigned int row)
 {
-    for (unsigned int beat = 0u; beat < MUSIC_BOX_PAD_COLUMNS; ++beat) {
-        const unsigned int x = pad_column_x(beat);
-        if (display->beat == beat)
-            fill_rectangle(display, x, BEAT_BAR_TOP, PAD_WIDTH, BEAT_BAR_HEIGHT);
-        else
-            draw_rectangle(display, x, BEAT_BAR_TOP, PAD_WIDTH, BEAT_BAR_HEIGHT);
+    return row * PAD_ROW_PITCH;
+}
+
+/*
+ * The beat, as a column down the right edge rather than a strip along the
+ * bottom: the panel has width to spare and no vertical room to waste. The
+ * current beat is a filled square, the rest small dots. Present on every
+ * screen, and beat one is the top dot.
+ */
+static void draw_beat_rail(MusicBoxDisplay *display)
+{
+    for (unsigned int beat = 0u; beat < MUSIC_BOX_PAD_ROWS; ++beat) {
+        const unsigned int y = pad_row_y(beat) + (PAD_CELL_HEIGHT - BEAT_DOT_SIZE) / 2u;
+        if (display->beat == beat) {
+            fill_rectangle(display, BEAT_DOT_X, y, BEAT_DOT_SIZE, BEAT_DOT_SIZE);
+        } else {
+            const unsigned int inset = (BEAT_DOT_SIZE - BEAT_DOT_IDLE_SIZE) / 2u;
+            fill_rectangle(display, BEAT_DOT_X + inset, y + inset,
+                           BEAT_DOT_IDLE_SIZE, BEAT_DOT_IDLE_SIZE);
+        }
     }
 }
 
@@ -185,27 +217,27 @@ static void draw_pad_grid(MusicBoxDisplay *display)
     for (unsigned int slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot) {
         const uint16_t bit = (uint16_t)(1u << slot);
         if ((display->mapped_slots & bit) == 0u) continue;
-        const unsigned int x = pad_column_x(slot % MUSIC_BOX_PAD_COLUMNS);
-        const unsigned int row =
-            MUSIC_BOX_PAD_ROWS - 1u - slot / MUSIC_BOX_PAD_COLUMNS;
-        const unsigned int y = PAD_GRID_TOP + row * PAD_ROW_PITCH;
+        const unsigned int x =
+            PAD_ORIGIN_X + (slot % MUSIC_BOX_PAD_COLUMNS) * PAD_COLUMN_PITCH;
+        const unsigned int y =
+            pad_row_y(MUSIC_BOX_PAD_ROWS - 1u - slot / MUSIC_BOX_PAD_COLUMNS);
 
         if ((busy & bit) != 0u) {
-            if (display->blink_on) fill_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
-            else draw_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+            if (display->blink_on) fill_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
+            else draw_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
         } else if ((display->pending_stop_slots[mode] & bit) != 0u) {
-            hatch_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+            hatch_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
         } else if ((display->playing_slots[mode] & bit) != 0u) {
-            fill_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+            fill_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
         } else if ((display->loaded_slots[mode] & bit) != 0u) {
-            draw_rectangle(display, x, y, PAD_WIDTH, PAD_HEIGHT);
+            draw_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
         } else {
-            fill_rectangle(display, x, y + PAD_HEIGHT - 1u, PAD_WIDTH, 1u);
+            fill_rectangle(display, x, y + PAD_CELL_HEIGHT - 1u, PAD_CELL_WIDTH, 1u);
         }
     }
 }
 
-/* Lowest set bit, as a 1-based pad number for the header. */
+/* Lowest set bit, as a 1-based pad number for the status column. */
 static unsigned int first_slot(uint16_t mask)
 {
     unsigned int slot = 0u;
@@ -213,38 +245,53 @@ static unsigned int first_slot(uint16_t mask)
     return slot + 1u;
 }
 
-static void draw_status_screen(MusicBoxDisplay *display)
+/* Seven characters fit beside the grid, which is exactly "SAMPLER". */
+static void draw_status_column(MusicBoxDisplay *display)
 {
-    const unsigned int mode = (unsigned int)display->mode;
     static const char *const labels[MUSIC_BOX_MODE_COUNT] = {"LOOP", "SAMPLER", "PAD"};
-    draw_text(display, PAD_ORIGIN_X, 0u, labels[mode]);
+    const unsigned int mode = (unsigned int)display->mode;
+
+    /* The rule runs the full height so the right half reads as one column. */
+    fill_rectangle(display, STATUS_RULE_X, 0u, 1u, MUSIC_BOX_DISPLAY_HEIGHT);
+    draw_text(display, STATUS_TEXT_X, 0u, labels[mode]);
+
+    char tempo[16];
+    (void)snprintf(tempo, sizeof(tempo), "%u BPM",
+                   (unsigned int)((display->tempo_millibpm + 500u) / 1000u));
+    draw_text(display, STATUS_TEXT_X, STATUS_LINE_PITCH, tempo);
 
     /* With sixteen pads the state has to name the pad it belongs to. */
-    char right[16];
+    char state[16] = "";
     if (display->recording_slots[mode] != 0u)
-        (void)snprintf(right, sizeof(right), "REC %u",
+        (void)snprintf(state, sizeof(state), "REC %u",
                        first_slot(display->recording_slots[mode]));
     else if (display->armed_slots[mode] != 0u)
-        (void)snprintf(right, sizeof(right), "ARM %u",
+        (void)snprintf(state, sizeof(state), "ARM %u",
                        first_slot(display->armed_slots[mode]));
-    else
-        (void)snprintf(right, sizeof(right), "%u BPM",
-                       (unsigned int)((display->tempo_millibpm + 500u) / 1000u));
-    draw_text_right(display, MUSIC_BOX_DISPLAY_WIDTH - 2u, 0u, right);
-
-    draw_pad_grid(display);
+    if (state[0] != '\0')
+        draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
 
-/* Bar geometry: a 124x13 frame with a 120x9 fill area inside it. */
+static void draw_status_screen(MusicBoxDisplay *display)
+{
+    draw_pad_grid(display);
+    draw_status_column(display);
+}
+
+/* Shares the pad grid's margins and stops short of the beat rail. */
+#define VOLUME_BAR_WIDTH (CONTENT_RIGHT_X - PAD_ORIGIN_X)
+#define VOLUME_FILL_WIDTH (VOLUME_BAR_WIDTH - 4u)
+
 static void draw_volume_screen(MusicBoxDisplay *display)
 {
     const unsigned int percent = display->volume_percent;
     char value[8];
     (void)snprintf(value, sizeof(value), "%u%%", percent);
-    draw_text(display, 2u, 0u, "VOLUME");
-    draw_text_right(display, MUSIC_BOX_DISPLAY_WIDTH - 2u, 0u, value);
-    draw_rectangle(display, 2u, 11u, 124u, 13u);
-    fill_rectangle(display, 4u, 13u, (120u * percent + 50u) / 100u, 9u);
+    draw_text(display, PAD_ORIGIN_X, 0u, "VOLUME");
+    draw_text_right(display, CONTENT_RIGHT_X, 0u, value);
+    draw_rectangle(display, PAD_ORIGIN_X, 11u, VOLUME_BAR_WIDTH, 13u);
+    fill_rectangle(display, PAD_ORIGIN_X + 2u, 13u,
+                   (VOLUME_FILL_WIDTH * percent + 50u) / 100u, 9u);
 }
 
 static bool refresh(MusicBoxDisplay *display)
@@ -253,7 +300,7 @@ static bool refresh(MusicBoxDisplay *display)
     memset(display->pixels, 0, sizeof(display->pixels));
     if (display->volume_visible) draw_volume_screen(display);
     else draw_status_screen(display);
-    draw_beat_footer(display);
+    draw_beat_rail(display);
 
     const uint8_t position[] = {0x21, 0x00, 0x7f, 0x22, 0x00, 0x03};
     return send_bytes(display->fd, 0x00u, position, sizeof(position)) &&

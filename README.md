@@ -206,13 +206,31 @@ with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
 
 ### Mode and pad display
 
-An SSD1306-compatible 128x32 I2C OLED at address `0x3c` shows, top to bottom:
-the active mode and either the tempo or the pad being recorded; a 4x4 pad map;
-and a four-bar beat footer with the current beat filled. The footer is present
-on every screen.
+An SSD1306-compatible 128x32 I2C OLED at address `0x3c`. The panel is wide and
+short, so the screen is laid out as three columns rather than stacked rows:
 
-The pad map is a 4x4 grid with the same shape as the controller, pad 1 at the
-bottom left, so a cell's position identifies its pad without needing a number:
+```text
++-----------------------------+-+-----------+---+
+| [    ][    ][    ][    ]    | | LOOP      | . |
+| [    ][    ][    ][    ]    | |           | # |
+| [    ][####][    ][    ]    | | 120 BPM   | . |
+| [####][::::][~~~~][    ]    | | REC 6     | . |
++-----------------------------+-+-----------+---+
+```
+
+Nothing is stacked. The 4x4 map takes the left, a rule separates it from the
+status text, and the beat runs as a rail of four dots down the right edge with
+the current one filled. Each column then gets the panel's full height: the pad
+cells are as tall as the display allows, and mode, tempo and record state each
+get their own line instead of sharing one row.
+
+Every gutter and outer margin is 3 pixels, the dots share the map's row pitch,
+and the text lines sit flush with the map's top and bottom, so the three columns
+run on one rhythm. The beat rail is present on every screen, including the
+volume overlay.
+
+The map has the same shape as the controller, pad 1 at the bottom left, so a
+cell's position identifies its pad without needing a number:
 
 | Cell | Meaning |
 |---|---|
