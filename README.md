@@ -1,6 +1,6 @@
 # Music Box
 
-Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into a headless stereo synthesizer, sixteen-slot live looper and sixteen-pad sampler.
+Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into a headless stereo synthesizer, sixteen-slot live looper, sixteen-pad sampler and SoundFont pad controller.
 
 The project deliberately stays small: one C11 process for audio/loop state/MIDI routing, JACK for low-latency audio, ALSA sequencer MIDI, FluidSynth as a separate service, and no bundled third-party source or SoundFonts.
 
@@ -28,8 +28,10 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 - stereo recording from both WM8960 microphones;
 - sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
 - hold to record, release to finish, press a playing loop to stop it;
-- a second performance mode, sampler, where each pad holds a one-shot recording;
-- knob 2 switches between loop and sampler mode without silencing running loops;
+- three performance modes on the same pads: loop, sampler and pad;
+- sampler mode gives each pad a one-shot recording of its own;
+- pad mode plays the FluidSynth SoundFont straight from the sixteen pads;
+- knob 2 switches mode without silencing anything already playing;
 - non-loop MIDI forwarded to FluidSynth;
 - sample-accurate shared beat/bar transport;
 - beat- or bar-quantized record start, finish and stop;
@@ -52,7 +54,8 @@ Also intended: Ubuntu Server LTS when the WM8960 driver is functioning, and the 
 
 ```text
 MPD218 -> Music Box MIDI router
-            |-- notes 52-55 -> loop or sampler pad commands
+            |-- notes 52-67 -> loop or sampler pad commands
+            |                  (forwarded to FluidSynth in pad mode)
             |-- knob 2      -> performance mode
             `-- other MIDI -> FluidSynth
 
@@ -67,9 +70,9 @@ FluidSynth is routed through Music Box rather than directly to the physical play
 
 ## Controls
 
-All sixteen pads, notes 52 to 67, drive two performance modes. Knob 2 (K2,
-bank A, CC 9 by default) chooses between them: the left half of its travel is
-loop mode, the right half sampler.
+All sixteen pads, notes 52 to 67, drive three performance modes. Knob 2 (K2,
+bank A, CC 9 by default) chooses between them, a third of its travel each:
+loop, then sampler, then pad.
 
 Pads are numbered the way the MPD218 labels them, bottom-left first, so pad 1 is
 note 52 and pad 16 is note 67. The display uses the same arrangement.
@@ -113,20 +116,41 @@ starts the take at the hold instead, losing that head. That is deliberate: those
 400 ms contain the outgoing sample coming back through the microphones, which
 would otherwise be pasted onto the front of its own replacement.
 
-The two modes own separate banks of sixteen slots, so a sample never overwrites
-a loop. Loops recorded in loop mode keep playing while sampler pads are used, and
+### Pad mode
+
+The sixteen pads play the FluidSynth SoundFont. Nothing is recorded and nothing
+is consumed: each pad's note is forwarded to the synthesizer with its velocity
+intact, so the pads behave like any other keyboard into FluidSynth, and the
+display lights a cell while its pad is held.
+
+Loops and samples carry on playing underneath, which is the point — pad mode is
+how you play over what you have already recorded. A Note Off always follows its
+own Note On, so turning the knob while a pad is down cannot leave a note hanging
+on the synthesizer.
+
+Both looper modes own separate banks of sixteen slots, so a sample never
+overwrites a loop. Loops recorded in loop mode keep playing while sampler pads are used, and
 samples keep playing after a switch back. That also means a sampler recording
 captures any loop still running through the microphones unless the loops are
 stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
 it is moved, so a freshly started service is always in loop mode regardless of
-where the knob is parked. The switch sits at the knob's midpoint, with a dead
-band of `mode_cc_hysteresis` counts either side that holds the current mode.
-That dead band is the only rotation a mode change costs once the knob is near
-the middle — 2 counts out of 127 by default, roughly 8 degrees on the MPD218 pot
-— so lower it for a lighter switch and raise it if a resting knob starts
-flapping on its own jitter.
+where the knob is parked. Its travel splits into three zones with a switch at
+each boundary:
+
+| Knob | Mode |
+|---|---|
+| 0–42 | loop |
+| 43–84 | sampler |
+| 85–127 | pad |
+
+Each switch has a dead band of `mode_cc_hysteresis` counts either side that
+holds the current mode. That dead band is the only rotation a mode change costs
+once the knob is near a switch — 2 counts out of 127 by default, roughly 8
+degrees on the MPD218 pot — so lower it for a lighter switch and raise it if a
+resting knob starts flapping on its own jitter. It is capped at 16, because a
+dead band wider than half a zone would make sampler mode unreachable.
 
 ## Configuration
 
@@ -174,7 +198,8 @@ lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
 `mode_control_enabled=false` pins the box to loop mode.
 
-`quantize` applies to loop mode only. Sampler recording is always unquantized.
+`quantize` applies to loop mode only. Sampler recording is always unquantized,
+and pad mode records nothing at all.
 
 Factory MPD218 presets vary here too. Confirm which controller knob 2 sends
 with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
@@ -200,7 +225,8 @@ bottom left, so a cell's position identifies its pad without needing a number:
 
 So in loop mode the solid cells are the loops playing back and a hatched cell is
 one you have asked to stop, still finishing its current pass. In sampler mode
-the outlined cells are the pads with a sample ready to trigger.
+the outlined cells are the pads with a sample ready to trigger. In pad mode
+nothing is stored, so a cell is solid only while its pad is held.
 
 The default device is `/dev/i2c-1`; the display is optional, and an
 initialization failure does not stop the audio engine. Configure it with:

@@ -251,13 +251,17 @@ ALSA --> CLASSIFY
 CLASSIFY --> COMMANDS : notes 52-67\npress / hold / release
 CLASSIFY --> COMMANDS : mode CC\nloop or sampler
 COMMANDS --> STATES : consume in JACK callback
+CLASSIFY --> FLUID : notes 52-67\nin pad mode
 CLASSIFY --> MIXER : volume CC\nhardware playback volume
 CLASSIFY --> FLUID : all other MIDI events
 
 note right of CLASSIFY
 Loop-control notes, the mode controller
 and the volume controller are consumed
-and are not forwarded to FluidSynth. The
+and are not forwarded to FluidSynth,
+except in pad mode, where a pad note goes
+to both: the synthesizer plays it and the
+command only lights the display. The
 mixer is written from the MIDI thread,
 never from the JACK callback.
 
@@ -330,7 +334,7 @@ A release received while still `ARMED_RECORD` is remembered. Recording begins at
 
 ## Performance modes
 
-The sixteen pads drive one of two banks, chosen by the mode knob. Each bank is a
+The sixteen pads drive one of three modes, chosen by the mode knob. Each bank is a
 separate `MusicBoxLoopBank` with its own sixteen stereo buffers, so a sample
 never overwrites a loop. Both banks are mixed and both advance their boundaries on
 every frame regardless of the active mode, which is what lets a loop keep
@@ -338,6 +342,11 @@ playing after a switch to sampler mode.
 
 The recording half of the state machine is shared. The mode only changes two
 things: which gesture arms a recording, and what a finished recording does.
+
+Pad mode is the third and owns no bank at all: its notes are forwarded to
+FluidSynth by the MIDI thread, and the only reason a pad command still reaches
+the audio thread is so the display can light the cell while the pad is held.
+Both recording banks keep playing underneath, which is the point of the mode.
 
 | | Loop bank | Sampler bank |
 |---|---|---|

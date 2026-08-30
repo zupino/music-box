@@ -558,6 +558,49 @@ The ASCII framebuffer harness earned its keep again here — the grid, the legac
 four-note layout and both blink phases were all checked that way before any of
 it reached the device.
 
+### Pad mode
+
+The sixteen-slot change above was asked for as a sampler-only widening, and
+turning it into a third mode is the better answer: the looper keeps its sixteen
+slots, and playing the SoundFont from the pads becomes its own mode rather than
+a special case inside the other two.
+
+Pad mode owns no bank, which is what makes it cheap. The MIDI thread stops
+consuming pad notes and forwards them to FluidSynth like any other note, with
+velocity intact. Nothing is recorded and no buffer is reserved, so the mode adds
+no memory at all.
+
+**Why the pad command is still queued.** The display wants to light a cell while
+its pad is down, and the MIDI thread cannot write the event queue: it is a
+single-producer ring owned by the audio thread. So the pad command still goes
+through the command queue, the audio thread recognises the pad-mode target and
+emits nothing but a `SLOT_STARTED` or `SLOT_FINISHED` event for the screen. The
+note itself never touches the audio thread. That keeps the SPSC invariant that
+the rest of the design rests on.
+
+`SAMPLE_STARTED` and `SAMPLE_FINISHED` were renamed to `SLOT_STARTED` and
+`SLOT_FINISHED` at the same time; they now mean "a slot began or stopped
+sounding", which covers a sampler one-shot and a held pad-mode note equally.
+
+**Forwarding has the same mid-gesture hazard as the banks.** If the knob moves
+from pad mode to loop mode while a pad is down, the Note Off would not be
+forwarded and FluidSynth would hold the note forever. `pad_forwarded` records
+which pads had their Note On sent to the synthesizer, and the Note Off follows
+it, exactly as `pad_bank` does for the recording banks.
+
+**Three zones on an absolute pot.** The knob splits into thirds: 0-42 loop,
+43-84 sampler, 85-127 pad, with `mode_cc_hysteresis` either side of each switch.
+A switch point itself belongs to the outer zone, so with the dead band off the
+zones are 43, 42 and 43 counts wide. The parser now caps the dead band at 16,
+because anything wider than half a zone would close the middle one and make
+sampler mode unreachable — the sort of configuration that would look like a
+hardware fault.
+
+`mode_for_knob` moved out of `midi.c` into `config.c` as
+`music_box_mode_for_knob` to get it under test: it is mapping policy, not MIDI
+plumbing, and `config.c` has no ALSA dependency so the test binary needs no
+hardware. The test sweeps all 128 positions.
+
 ### Not verified on hardware
 Written without access to the test Pi. Knob 2's actual controller number, the
 readability of the boxes at 128x32, whether 400 ms is a comfortable hold

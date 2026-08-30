@@ -28,15 +28,25 @@ This page summarises the capabilities currently implemented on the main developm
 
 ### Performance modes
 
-- two modes, loop and sampler, sharing the same four pads;
-- an MPD218 knob selects the mode at its midpoint, with a configurable dead
-  band that sets how much rotation a change costs;
-- each mode owns a separate bank of sixteen stereo slots, so neither overwrites
-  the other;
-- both banks are always mixed, so a running loop survives a mode change;
+- three modes, loop, sampler and pad, sharing the same sixteen pads;
+- an MPD218 knob selects the mode, a third of its travel each, with a
+  configurable dead band that sets how much rotation a change costs;
+- the two recording modes own a separate bank of sixteen stereo slots each, so
+  neither overwrites the other;
+- both banks are always mixed, so a running loop survives any mode change;
 - the bank that received a pad press also receives its release, so changing
   mode mid-gesture cannot strand a recording;
 - the mode can be pinned by disabling the knob.
+
+### Pad mode
+
+- all sixteen pads play the FluidSynth SoundFont;
+- pad notes are forwarded with their velocity rather than consumed;
+- loops and samples keep playing underneath;
+- a Note Off follows its own Note On, so a mode change mid-press cannot hang a
+  note on the synthesizer;
+- the display lights a cell while its pad is held;
+- nothing is recorded and no buffer is reserved for the mode.
 
 ### Sampler
 
@@ -80,7 +90,8 @@ This page summarises the capabilities currently implemented on the main developm
 
 ### MIDI routing
 
-- loop-control notes are consumed by Music Box;
+- loop-control notes are consumed by Music Box, except in pad mode where they
+  reach the synthesizer;
 - the mode and volume controllers are consumed by Music Box;
 - pad holds are timed on the MIDI thread so the audio callback stays free of
   wall-clock logic;
@@ -140,6 +151,7 @@ This page summarises the capabilities currently implemented on the main developm
 - pre-roll rejection of the bank's own playback;
 - stop-arm and stop-cancel notification tests;
 - configuration parsing, including short and rejected pad-note lists;
+- mode-knob zone resolution across the whole 0-127 range;
 - lock-free queue tests;
 - synthetic AEC convergence tests;
 - strict compiler warnings;
