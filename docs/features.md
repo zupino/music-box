@@ -24,12 +24,36 @@ This page summarises the capabilities currently implemented on the main developm
 - maximum loop length configured at startup;
 - stereo recording and playback preserved end-to-end.
 
+### Performance modes
+
+- two modes, loop and sampler, sharing the same four pads;
+- an MPD218 knob selects the mode, with hysteresis around the switch point;
+- each mode owns a separate bank of four stereo slots, so neither overwrites
+  the other;
+- both banks are always mixed, so a running loop survives a mode change;
+- the bank that received a pad press also receives its release, so changing
+  mode mid-gesture cannot strand a recording;
+- the mode can be pinned by disabling the knob.
+
+### Sampler
+
+- every pad records a one-shot, pad-associated sample;
+- a hold past a configurable threshold starts a recording;
+- recording is never quantized: a sample spans exactly press to release;
+- a rolling pre-roll recovers the head of the take, which elapses before the
+  hold is recognised;
+- a finished sample stays silent until its pad is tapped;
+- a tap plays the sample once from its start and stops at its end;
+- a tap during playback restarts the sample;
+- a further hold replaces the sample;
+- maximum sample length configured separately from the loop length.
+
 ### Shared transport and quantization
 
 - one sample-accurate transport shared by all loop slots;
 - configurable BPM;
 - configurable beats per bar;
-- quantization modes: off, beat, or bar;
+- quantization modes: off, beat, or bar, applied to loop mode;
 - quantized record start;
 - quantized record finish;
 - quantized loop stop;
@@ -50,6 +74,9 @@ This page summarises the capabilities currently implemented on the main developm
 ### MIDI routing
 
 - loop-control notes are consumed by Music Box;
+- the mode and volume controllers are consumed by Music Box;
+- pad holds are timed on the MIDI thread so the audio callback stays free of
+  wall-clock logic;
 - all other MIDI events are forwarded to FluidSynth;
 - no direct MPD218-to-FluidSynth connection is required;
 - ALSA client discovery does not depend on FluidSynth process IDs;
@@ -102,6 +129,7 @@ This page summarises the capabilities currently implemented on the main developm
 
 - transport boundary tests;
 - loop-state transition tests;
+- sampler trigger, one-shot completion and re-record tests;
 - lock-free queue tests;
 - synthetic AEC convergence tests;
 - strict compiler warnings;
@@ -118,8 +146,8 @@ Quantized recording should usually place the physical pad tap before the recordi
 - overdub and undo;
 - mute/resume without replacing a loop;
 - fixed 1/2/4/8-bar recording lengths;
-- per-loop gain and pan;
-- persistent loop save/load;
+- per-loop and per-sample gain and pan;
+- persistent loop and sample save/load;
 - reverse playback;
 - loop clear gesture.
 

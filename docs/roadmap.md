@@ -3,6 +3,7 @@
 ## Implemented in this refactor
 
 - shared sample-accurate transport;
+- loop and sampler performance modes on one set of pads;
 - beat/bar quantized recording, finish and stop;
 - dependency-free stereo adaptive echo cancellation;
 - real-time-safe state ownership and command queues;
@@ -29,9 +30,9 @@ Future controller mappings may use one MPD218 knob for master output volume and 
 
 Possible later additions: overdub/undo, mute/resume without replacement, fixed 1/2/4/8-bar lengths, persistent loop save/load and per-loop gain.
 
-### One-shot recording
+### One-shot recording persistence
 
-Add short pad-associated recordings that play once per tap instead of repeating like the current loop slots. Recording gestures, maximum duration, replacement and persistence remain to be specified.
+Sampler mode now provides short pad-associated recordings that play once per tap instead of repeating. What remains deferred is keeping them across a restart: samples live only in memory, and a save/load format, naming and storage location still need to be designed.
 
 ### Repeat/stutter effect
 

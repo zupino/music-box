@@ -102,6 +102,10 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->loop_notes[2] = 54u;
     config->loop_notes[3] = 55u;
     config->max_loop_seconds = 60u;
+    config->max_sample_seconds = 10u;
+    config->pad_hold_milliseconds = 400u;
+    config->mode_control_enabled = true;
+    config->mode_cc = 9u;
     config->tempo_millibpm = 120000u;
     config->beats_per_bar = 4u;
     config->quantize_mode = MUSIC_BOX_QUANTIZE_BAR;
@@ -137,6 +141,15 @@ const char *music_box_quantize_mode_name(MusicBoxQuantizeMode mode)
     }
 }
 
+const char *music_box_mode_name(MusicBoxMode mode)
+{
+    switch (mode) {
+    case MUSIC_BOX_MODE_LOOP: return "loop";
+    case MUSIC_BOX_MODE_SAMPLER: return "sampler";
+    default: return "unknown";
+    }
+}
+
 bool music_box_config_load(MusicBoxConfig *config, const char *path)
 {
     FILE *file = fopen(path, "r");
@@ -167,6 +180,17 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
         } else if (strcmp(key, "max_loop_seconds") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value >= 1u && unsigned_value <= 600u;
             config->max_loop_seconds = (uint32_t)unsigned_value;
+        } else if (strcmp(key, "max_sample_seconds") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value >= 1u && unsigned_value <= 600u;
+            config->max_sample_seconds = (uint32_t)unsigned_value;
+        } else if (strcmp(key, "pad_hold_milliseconds") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value >= 50u && unsigned_value <= 5000u;
+            config->pad_hold_milliseconds = (uint32_t)unsigned_value;
+        } else if (strcmp(key, "mode_control_enabled") == 0) {
+            valid = parse_bool(value, &config->mode_control_enabled);
+        } else if (strcmp(key, "mode_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->mode_cc = (uint8_t)unsigned_value;
         } else if (strcmp(key, "bpm") == 0) {
             valid = parse_float(value, &float_value) && float_value >= 1.0f && float_value <= 400.0f;
             config->tempo_millibpm = (uint32_t)(float_value * 1000.0f + 0.5f);

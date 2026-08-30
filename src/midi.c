@@ -8,9 +8,21 @@
 #include <string.h>
 #include <time.h>
 
+/* Knob positions between the two thresholds keep the current mode, so a knob
+   parked near the middle cannot flap between modes on its own jitter. */
+#define MODE_KNOB_SAMPLER_FROM 72
+#define MODE_KNOB_LOOP_BELOW 56
+
 static bool has_prefix(const char *text, const char *prefix)
 {
     return strncmp(text, prefix, strlen(prefix)) == 0;
+}
+
+static uint64_t monotonic_milliseconds(void)
+{
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_nsec / 1000000u;
 }
 
 static int loop_slot_for_note(const MusicBoxMidi *midi, unsigned int note)
@@ -23,9 +35,44 @@ static int loop_slot_for_note(const MusicBoxMidi *midi, unsigned int note)
 
 static void queue_pad_command(MusicBoxMidi *midi, MusicBoxCommandType type, uint8_t slot)
 {
-    const MusicBoxCommand command = {.type = type, .slot = slot, .tempo_millibpm = 0u};
+    const MusicBoxCommand command = {.type = type, .slot = slot, .mode = 0u, .tempo_millibpm = 0u};
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; event dropped\n");
+}
+
+/*
+ * A pad that is still down after the hold threshold arms a sampler recording.
+ * The gesture has to be reported while the pad is held rather than on release,
+ * so it is timed here instead of waiting for the Note Off.
+ */
+static void check_pad_holds(MusicBoxMidi *midi, uint64_t now)
+{
+    for (uint8_t slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot) {
+        if (!midi->pad_held[slot] || midi->pad_hold_sent[slot]) continue;
+        if (now - midi->pad_press_milliseconds[slot] < midi->config.pad_hold_milliseconds) continue;
+        midi->pad_hold_sent[slot] = true;
+        queue_pad_command(midi, MUSIC_BOX_COMMAND_PAD_HOLD, slot);
+    }
+}
+
+/* The mode knob is absolute, so the mode only follows it once it is moved. */
+static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *event)
+{
+    if (event->type != SND_SEQ_EVENT_CONTROLLER || !midi->config.mode_control_enabled) return false;
+    if (event->data.control.param != (unsigned int)midi->config.mode_cc) return false;
+    const int value = event->data.control.value;
+    MusicBoxMode mode = midi->mode;
+    if (value >= MODE_KNOB_SAMPLER_FROM) mode = MUSIC_BOX_MODE_SAMPLER;
+    else if (value < MODE_KNOB_LOOP_BELOW) mode = MUSIC_BOX_MODE_LOOP;
+    if (mode == midi->mode) return true;
+    midi->mode = mode;
+    const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,
+                                     .slot = 0u,
+                                     .mode = (uint8_t)mode,
+                                     .tempo_millibpm = 0u};
+    if (!music_box_command_queue_push(midi->commands, &command))
+        fprintf(stderr, "MIDI command queue full; mode change dropped\n");
+    return true;
 }
 
 /* The MIDI thread owns the mixer handle; ALSA control ioctls never touch the
@@ -46,9 +93,15 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
     if (note_event) slot = loop_slot_for_note(midi, event->data.note.note);
     if (slot >= 0) {
         const bool pressed = event->type == SND_SEQ_EVENT_NOTEON && event->data.note.velocity > 0u;
+        midi->pad_held[slot] = pressed;
+        if (pressed) {
+            midi->pad_hold_sent[slot] = false;
+            midi->pad_press_milliseconds[slot] = monotonic_milliseconds();
+        }
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
         return;
     }
+    if (handle_mode_controller(midi, event)) return;
     if (handle_volume_controller(midi, event)) return;
     snd_seq_ev_set_source(event, (unsigned char)output_port);
     snd_seq_ev_set_subs(event);
@@ -89,13 +142,6 @@ static void connect_matching_ports(snd_seq_t *sequencer, int own_client, int inp
     }
 }
 
-static uint64_t monotonic_milliseconds(void)
-{
-    struct timespec time;
-    clock_gettime(CLOCK_MONOTONIC, &time);
-    return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_nsec / 1000000u;
-}
-
 static void *midi_thread(void *argument)
 {
     MusicBoxMidi *midi = argument;
@@ -126,6 +172,9 @@ static void *midi_thread(void *argument)
         snd_seq_event_t *event = NULL;
         while (snd_seq_event_input(sequencer, &event) >= 0)
             handle_event(midi, sequencer, output_port, event);
+        /* The 5 ms poll is the resolution of the hold threshold; the recording
+           itself still starts on an exact transport boundary. */
+        check_pad_holds(midi, monotonic_milliseconds());
         const struct timespec pause = {.tv_sec = 0, .tv_nsec = 5000000};
         nanosleep(&pause, NULL);
     }

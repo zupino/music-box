@@ -13,13 +13,21 @@
 #define MUSIC_BOX_DISPLAY_BUFFER_SIZE \
     (MUSIC_BOX_DISPLAY_WIDTH * MUSIC_BOX_DISPLAY_HEIGHT / 8u)
 
+/*
+ * Slot bitmasks are kept per bank so that switching mode shows the state that
+ * bank was left in, rather than whatever the other bank was doing.
+ */
 typedef struct {
     int fd;
     bool enabled;
     uint32_t tempo_millibpm;
     uint8_t beat;
-    uint8_t recording_slots;
-    uint8_t armed_slots;
+    MusicBoxMode mode;
+    uint8_t recording_slots[MUSIC_BOX_MODE_COUNT];
+    uint8_t armed_slots[MUSIC_BOX_MODE_COUNT];
+    /* Slots holding audio, and the subset of them currently sounding. */
+    uint8_t loaded_slots[MUSIC_BOX_MODE_COUNT];
+    uint8_t playing_slots[MUSIC_BOX_MODE_COUNT];
     uint8_t volume_percent;
     bool volume_visible;
     uint32_t volume_hold_milliseconds;

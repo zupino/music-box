@@ -14,6 +14,12 @@
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];
     uint32_t max_loop_seconds;
+    uint32_t max_sample_seconds;
+
+    /* Pads held at least this long arm a sampler recording. */
+    uint32_t pad_hold_milliseconds;
+    bool mode_control_enabled;
+    uint8_t mode_cc;
 
     uint32_t tempo_millibpm;
     uint32_t beats_per_bar;
@@ -48,5 +54,6 @@ typedef struct {
 void music_box_config_defaults(MusicBoxConfig *config);
 bool music_box_config_load(MusicBoxConfig *config, const char *path);
 const char *music_box_quantize_mode_name(MusicBoxQuantizeMode mode);
+const char *music_box_mode_name(MusicBoxMode mode);
 
 #endif

@@ -287,3 +287,194 @@ knob is parked high. Start the knob low after this change.
 
 Only the fourth was a design error rather than a bug; together they explain
 every symptom reported from the device.
+
+---
+
+## 2026-08-30 — Loop and sampler modes
+
+### Goal
+Add a second performance mode. Loop mode keeps today's behaviour. Sampler mode
+turns every pad into a one-shot recorder: a long press records, a tap plays the
+result once, a further long press replaces it. Knob 2 selects the mode, and the
+display shows the mode, what each pad holds, and a compact beat footer.
+
+### What was added
+- `src/rt_queue.h` — `MusicBoxMode`, the `PAD_HOLD` and `SET_MODE` commands, the
+  `SAMPLE_STARTED` / `SAMPLE_FINISHED` / `MODE_CHANGED` events, and a `bank`
+  field on every event so a consumer can tell the two banks apart.
+- `src/loop_bank.c` — the bank carries a mode. A sampler bank arms on the hold
+  instead of the press, closes a recording into `STOPPED` instead of `PLAYING`,
+  and plays through the new `ONE_SHOT` state, which stops at the stored length
+  rather than wrapping.
+- `src/audio_engine.c` — a second `MusicBoxLoopBank`. Both banks apply
+  boundaries, mix and record on every frame; only pad routing depends on the
+  mode.
+- `src/midi.c` — pad hold timing and the mode controller.
+- `src/display.c` — new layout, described below.
+- `src/config.c` — `mode_control_enabled`, `mode_cc`, `max_sample_seconds`,
+  `pad_hold_milliseconds`.
+- `tests/test_loop_bank.c` — split into a loop case and a sampler case.
+
+### Why two banks instead of one
+The requirement that loops keep playing after a switch to sampler mode rules out
+reinterpreting one set of buffers. With a single bank, a pad that is both a
+running loop and a sampler pad has no unambiguous meaning for a short press. Two
+banks of four slots cost four more stereo buffers and remove the ambiguity
+entirely: `max_sample_seconds` defaults to 10 rather than the loop's 60 to keep
+that cost near 15 MB at 48 kHz.
+
+### Why the hold is timed on the MIDI thread
+Sampler mode needs the recording to be armed *while the pad is still down*, as
+in loop mode, so it cannot wait for the Note Off. The MIDI thread already wakes
+every 5 ms, so it times the hold and emits one extra `PAD_HOLD` command. This
+keeps wall-clock logic out of the JACK callback; the recording it arms still
+starts on an exact transport boundary, so the 5 ms poll does not affect timing.
+
+### Mode changes travel through the command queue
+The mode is applied in the audio callback, not read from an atomic by it. Both
+the mode and the pad gestures then pass through one queue and cannot be
+reordered against each other. The engine also remembers which bank each pad was
+pressed on and routes that pad's hold and release to the same bank, so turning
+the knob mid-gesture cannot leave a slot stuck in `RECORDING`.
+
+### The mode knob is absolute
+Like the volume knob, and with the same consequence: the mode follows the knob
+only once it is moved, so the service always starts in loop mode no matter where
+knob 2 is parked. Thresholds are 72 and up for sampler, below 56 for loop, with
+the gap between them holding the current mode so a knob resting near the middle
+cannot flap. `mode_cc=9` matches the common factory mapping for K2 in bank A;
+verify with `aseqdump -p MPD218`, and keep it distinct from `volume_cc`.
+
+### Display layout, 128x32
+```text
+rows 0-6    mode name          tempo, or REC / ARMED
+rows 9-23   [ 1 ] [ 2 ] [ 3 ] [ 4 ]     one box per pad
+rows 27-31  [===] [   ] [   ] [   ]     beat footer, every screen
+```
+Columns are 32 pixels apart, so each pad box sits directly above its beat bar.
+A pad box is bare when empty, outlined when it holds audio, double-outlined
+while recording, and inverted while sounding. The inversion is an XOR pass over
+the box after the digit is drawn, which is why `invert_rectangle` exists: the
+1-bit framebuffer only ORs pixels otherwise. The four beat circles and the note
+glyph are gone; the volume bar lost four rows to make room for the footer.
+
+Rendering was checked by compiling `display.c` into a throwaway harness that
+dumps the framebuffer as ASCII. Worth repeating for any layout change — it
+catches overlap and clipping without the hardware.
+
+### Sampler recording is never quantized
+First correction after the feature was written, before any device test. The
+sampler bank had inherited the configured `quantize`, which is wrong for what a
+sample is: rounding a spoken word or a hit up to a whole bar defeats the point.
+A sampler bank is now always built with `MUSIC_BOX_QUANTIZE_OFF`, so it reuses
+the state machine's existing unquantized paths and never reaches
+`ARMED_RECORD` or `ARMED_FINISH`. Loop mode still follows `quantize`.
+
+That exposed a gap the quantized version had hidden. A sample has to run from
+the press, but a press cannot start a recording, because a short press is how a
+sample is triggered. The gesture is only known to be a recording once the pad
+has been held for `pad_hold_milliseconds`, and by then the first 400 ms of the
+take have gone past. Losing 400 ms of head removes the attack of most things
+worth sampling, so it is not an acceptable rounding error.
+
+The fix is a pre-roll: a ring of the last `pad_hold_milliseconds` of cleaned
+input, per sampler bank, written on every frame and copied into the slot as the
+head of the take when recording starts. Cost is one bounded `memcpy` per
+recording inside the audio callback, about 154 kB at 48 kHz for the 400 ms
+default. At a 256-frame period that is roughly 3% of one JACK cycle, once,
+which is acceptable; a per-slot capture buffer with a pointer swap would avoid
+even that, at the price of doubling sampler memory.
+
+The pre-roll length is the configured hold rather than the true press-to-hold
+interval, which the MIDI thread knows exactly. The difference is bounded by the
+5 ms poll, so the head can be up to 5 ms short. Not worth a wider command
+struct.
+
+### Config on an existing device
+Unlike the volume session, nothing has to be appended for the feature to work:
+the four new keys all have defaults, and a config written before this change is
+still accepted. `install.sh` keeps the existing
+`/etc/music-box/music-box.conf`, so append these only to tune them:
+
+```bash
+sudo tee -a /etc/music-box/music-box.conf <<'EOF'
+
+mode_control_enabled=true
+mode_cc=9
+max_sample_seconds=10
+pad_hold_milliseconds=400
+EOF
+sudo systemctl restart music-box.service
+```
+
+The usual caveat still applies in the other direction: the parser rejects
+unknown keys, so once these are written the binary has to be updated before the
+config.
+
+### Storage model: nothing is written to disk
+Worth stating plainly, because "sampler" suggests files and there are none.
+
+**Where samples live.** In RAM only, inside the `music-box` process. There is no
+sample directory, no file format, no naming scheme and no `write()` anywhere in
+the audio path. A sample is a pair of `float` arrays in a `MusicBoxLoopSlot`,
+addressed by slot index alone. The `*.wav` line in `.gitignore` is precautionary
+and matches nothing the program produces.
+
+**Lifetime.** Loops and samples are lost on restart, on a JACK shutdown, and on
+`systemctl restart music-box.service`. Recording over a slot frees nothing and
+allocates nothing; it overwrites the buffer that was allocated at startup.
+
+**How many fit.** Exactly four per bank, always. Eight recordings total, four
+loops and four samples. The count is fixed by `MUSIC_BOX_LOOP_COUNT` and the
+four pads, not by available memory, so nothing runs out and nothing is evicted:
+a fifth recording is not a capacity problem, it is simply not expressible.
+
+**What a second costs.** Stereo 32-bit float at the JACK sample rate:
+
+    sample_rate x 2 channels x 4 bytes
+
+| Rate | Per second | Per minute |
+|---|---|---|
+| 44.1 kHz | 352.8 kB | 21.2 MB |
+| 48 kHz | 384 kB | 23.0 MB |
+
+**What is actually allocated.** All of it at startup, up front, whether or not
+anything is ever recorded, because the audio callback cannot allocate. Each
+bank reserves its maximum length on all four slots:
+
+    loops    4 x max_loop_seconds           x 384 kB/s
+    samples  4 x max_sample_seconds         x 384 kB/s
+    pre-roll 1 x pad_hold_milliseconds/1000 x 384 kB/s
+
+With the shipped config at 48 kHz (`max_loop_seconds=30`,
+`max_sample_seconds=10`, `pad_hold_milliseconds=400`):
+
+| Bank | Reserved |
+|---|---|
+| Loops | 46.1 MB |
+| Samples | 15.4 MB |
+| Pre-roll | 0.15 MB |
+| Total | 61.6 MB |
+
+Note that `config.c` defaults `max_loop_seconds` to 60, twice what the shipped
+config file sets, so a run with a hand-written config that omits the key
+reserves 92 MB for loops instead of 46 MB. On a 1 GB Pi 3B either is fine, but
+`max_loop_seconds=600` and `max_sample_seconds=600`, both of which the parser
+accepts, would ask for 1.8 GB and fail at startup.
+
+**Disk usage of the installation itself** is unrelated and static: the binary,
+three unit files, the config and the helper scripts. The only large file on a
+Music Box system is the SoundFont, which belongs to FluidSynth, is chosen at
+install time and is never written by this program.
+
+Persisting samples across a restart is deferred; see `roadmap.md`. It is the
+one place a real filesystem model would have to be designed, and the open
+questions are the format, where they live relative to `/etc/music-box`, whether
+a slot maps to a fixed filename, and what happens when a stored sample is longer
+than the current `max_sample_seconds`.
+
+### Not verified on hardware
+Written without access to the test Pi. Knob 2's actual controller number, the
+readability of the boxes at 128x32, whether 400 ms is a comfortable hold
+threshold, and whether the pre-roll head sounds right in a live take all need a
+device check.
