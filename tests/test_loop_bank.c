@@ -5,13 +5,27 @@
 #include <math.h>
 #include <stdio.h>
 
+/* Mirrors the order the audio callback uses, mix included, because the mix is
+   what tells the bank it is sounding. */
 static void process_frame(MusicBoxLoopBank *bank,
                           MusicBoxTransport *transport,
                           float sample)
 {
+    float left = 0.0f;
+    float right = 0.0f;
     music_box_loop_bank_apply_boundary(bank, transport);
+    music_box_loop_bank_mix_sample(bank, &left, &right);
     music_box_loop_bank_record_sample(bank, sample, -sample);
     music_box_transport_advance(transport);
+}
+
+static bool drain_until(MusicBoxEventQueue *events, MusicBoxEventType type)
+{
+    MusicBoxEvent event;
+    bool found = false;
+    while (music_box_event_queue_pop(events, &event))
+        if (event.type == type) found = true;
+    return found;
 }
 
 static void run_to_frame(MusicBoxLoopBank *bank,
@@ -51,6 +65,16 @@ static void test_loop_mode(void)
     /* A hold is a sampler gesture and must not disturb a loop bank. */
     music_box_loop_bank_pad_hold(&bank, 0u, &transport);
     assert(bank.slots[0].state == MUSIC_BOX_LOOP_PLAYING);
+
+    /* Arming a stop, then taking it back, both have to be announced so the
+       display can show the loop leaving and then staying. */
+    (void)drain_until(&events, MUSIC_BOX_EVENT_BEAT);
+    music_box_loop_bank_pad_press(&bank, 0u, &transport);
+    assert(bank.slots[0].state == MUSIC_BOX_LOOP_ARMED_STOP);
+    assert(drain_until(&events, MUSIC_BOX_EVENT_LOOP_STOP_ARMED));
+    music_box_loop_bank_pad_press(&bank, 0u, &transport);
+    assert(bank.slots[0].state == MUSIC_BOX_LOOP_PLAYING);
+    assert(drain_until(&events, MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED));
     music_box_loop_bank_destroy(&bank);
 }
 
@@ -125,10 +149,51 @@ static void test_sampler_mode(void)
     music_box_loop_bank_destroy(&bank);
 }
 
+/*
+ * Tapping a loaded pad previews it, and that preview reaches the microphones.
+ * The pre-roll must not carry it into the head of the replacement take.
+ */
+static void test_sampler_preroll_drops_its_own_playback(void)
+{
+    MusicBoxEventQueue events;
+    music_box_event_queue_init(&events);
+    MusicBoxTransport transport;
+    assert(music_box_transport_init(&transport, 100u, 60000u, 4u));
+    MusicBoxLoopBank bank;
+    assert(music_box_loop_bank_init(&bank, 100u, 10u, MUSIC_BOX_QUANTIZE_OFF,
+                                    MUSIC_BOX_MODE_SAMPLER, 100u, &events));
+
+    music_box_loop_bank_pad_hold(&bank, 0u, &transport);
+    for (unsigned int frame = 0u; frame < 20u; ++frame) process_frame(&bank, &transport, 0.25f);
+    music_box_loop_bank_pad_release(&bank, 0u, &transport);
+    assert(bank.slots[0].state == MUSIC_BOX_LOOP_STOPPED);
+    assert(bank.slots[0].recorded_frames == 20u);
+
+    /* Silent bank: the ring fills normally. */
+    for (unsigned int frame = 0u; frame < 10u; ++frame) process_frame(&bank, &transport, 0.75f);
+    assert(bank.preroll_filled == 10u);
+
+    /* Previewing: every frame of history is dropped while the pad sounds. */
+    music_box_loop_bank_pad_press(&bank, 0u, &transport);
+    assert(bank.slots[0].state == MUSIC_BOX_LOOP_ONE_SHOT);
+    process_frame(&bank, &transport, 0.75f);
+    assert(bank.preroll_filled == 0u);
+    for (unsigned int frame = 0u; frame < 5u; ++frame) process_frame(&bank, &transport, 0.75f);
+    assert(bank.preroll_filled == 0u);
+
+    /* So the replacement starts clean at the hold instead of with the old
+       sample's bleed pasted on the front. */
+    music_box_loop_bank_pad_hold(&bank, 0u, &transport);
+    assert(bank.slots[0].state == MUSIC_BOX_LOOP_RECORDING);
+    assert(bank.slots[0].recorded_frames == 0u);
+    music_box_loop_bank_destroy(&bank);
+}
+
 int main(void)
 {
     test_loop_mode();
     test_sampler_mode();
+    test_sampler_preroll_drops_its_own_playback();
     puts("loop bank tests passed");
     return 0;
 }

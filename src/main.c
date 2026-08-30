@@ -44,6 +44,9 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_LOOP_STOP_ARMED:
         printf("%s %u: stop armed\n", bank, slot);
         break;
+    case MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED:
+        printf("%s %u: stop cancelled\n", bank, slot);
+        break;
     case MUSIC_BOX_EVENT_LOOP_STOPPED:
         printf("%s %u: stopped\n", bank, slot);
         break;
@@ -117,12 +120,25 @@ int main(int argc, char **argv)
            music_box_quantize_mode_name(config.quantize_mode),
            (double)config.tempo_millibpm / 1000.0,
            config.beats_per_bar);
-    printf("Mode: %s at startup, hold %u ms to record a sample, samples up to %u s\n",
+    const size_t pads = music_box_config_mapped_pads(&config);
+    printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
+           pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
+           (unsigned int)config.pad_hold_milliseconds);
+    /* Every buffer is reserved up front, so the total is worth stating: with
+       sixteen pads a generous max_loop_seconds adds up quickly. */
+    const double megabytes_per_second =
+        (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;
+    printf("Mode: %s at startup, reserving %.0f MB for %u loop slots of %u s "
+           "and %u sample slots of %u s\n",
            music_box_mode_name(MUSIC_BOX_MODE_LOOP),
-           (unsigned int)config.pad_hold_milliseconds,
-           (unsigned int)config.max_sample_seconds);
+           (double)MUSIC_BOX_LOOP_COUNT *
+               (double)(config.max_loop_seconds + config.max_sample_seconds) *
+               megabytes_per_second,
+           (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_loop_seconds,
+           (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
-        printf("Mode knob: CC %u selects loop or sampler\n", (unsigned int)config.mode_cc);
+        printf("Mode knob: CC %u selects loop or sampler, dead band +/-%u around 64\n",
+               (unsigned int)config.mode_cc, (unsigned int)config.mode_cc_hysteresis);
     else
         printf("Mode knob: disabled\n");
     printf("AEC: %s, taps: %zu, delay: %zu frames\n",

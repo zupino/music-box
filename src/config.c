@@ -72,14 +72,22 @@ static bool copy_name(char *destination, const char *source)
     return true;
 }
 
+/*
+ * Accepts one to MUSIC_BOX_LOOP_COUNT notes. Listing fewer leaves the rest of
+ * the pads unmapped rather than failing, so a configuration written when the
+ * looper had four slots still starts, with four usable pads.
+ */
 static bool parse_loop_notes(const char *text,
                              uint8_t notes[MUSIC_BOX_LOOP_COUNT])
 {
-    char buffer[128];
+    char buffer[256];
     if (strlen(text) >= sizeof(buffer)) {
         return false;
     }
     strcpy(buffer, text);
+    for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        notes[index] = MUSIC_BOX_NOTE_UNMAPPED;
+    }
     char *save = NULL;
     char *token = strtok_r(buffer, ",", &save);
     size_t index = 0u;
@@ -91,21 +99,24 @@ static bool parse_loop_notes(const char *text,
         notes[index++] = (uint8_t)note;
         token = strtok_r(NULL, ",", &save);
     }
-    return index == MUSIC_BOX_LOOP_COUNT && token == NULL;
+    return index > 0u && token == NULL;
 }
 
 void music_box_config_defaults(MusicBoxConfig *config)
 {
     memset(config, 0, sizeof(*config));
-    config->loop_notes[0] = 52u;
-    config->loop_notes[1] = 53u;
-    config->loop_notes[2] = 54u;
-    config->loop_notes[3] = 55u;
-    config->max_loop_seconds = 60u;
+    /* The MPD218's sixteen pads in bank B, bottom-left first. */
+    for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        config->loop_notes[index] = (uint8_t)(52u + index);
+    }
+    /* Sixteen slots per bank multiply this, so the built-in default matches
+       the shipped configuration rather than exceeding it. */
+    config->max_loop_seconds = 30u;
     config->max_sample_seconds = 10u;
     config->pad_hold_milliseconds = 400u;
     config->mode_control_enabled = true;
     config->mode_cc = 9u;
+    config->mode_cc_hysteresis = 2u;
     config->tempo_millibpm = 120000u;
     config->beats_per_bar = 4u;
     config->quantize_mode = MUSIC_BOX_QUANTIZE_BAR;
@@ -139,6 +150,15 @@ const char *music_box_quantize_mode_name(MusicBoxQuantizeMode mode)
     case MUSIC_BOX_QUANTIZE_BAR: return "bar";
     default: return "unknown";
     }
+}
+
+size_t music_box_config_mapped_pads(const MusicBoxConfig *config)
+{
+    size_t count = 0u;
+    for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        if (config->loop_notes[index] != MUSIC_BOX_NOTE_UNMAPPED) ++count;
+    }
+    return count;
 }
 
 const char *music_box_mode_name(MusicBoxMode mode)
@@ -188,6 +208,9 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
             config->pad_hold_milliseconds = (uint32_t)unsigned_value;
         } else if (strcmp(key, "mode_control_enabled") == 0) {
             valid = parse_bool(value, &config->mode_control_enabled);
+        } else if (strcmp(key, "mode_cc_hysteresis") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 32u;
+            config->mode_cc_hysteresis = (uint8_t)unsigned_value;
         } else if (strcmp(key, "mode_cc") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
             config->mode_cc = (uint8_t)unsigned_value;

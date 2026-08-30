@@ -15,7 +15,8 @@
 
 /*
  * Slot bitmasks are kept per bank so that switching mode shows the state that
- * bank was left in, rather than whatever the other bank was doing.
+ * bank was left in, rather than whatever the other bank was doing. One bit per
+ * pad, so sixteen pads need sixteen bits.
  */
 typedef struct {
     int fd;
@@ -23,11 +24,17 @@ typedef struct {
     uint32_t tempo_millibpm;
     uint8_t beat;
     MusicBoxMode mode;
-    uint8_t recording_slots[MUSIC_BOX_MODE_COUNT];
-    uint8_t armed_slots[MUSIC_BOX_MODE_COUNT];
+    /* Pads with a note assigned; the rest are left blank on the grid. */
+    uint16_t mapped_slots;
+    uint16_t recording_slots[MUSIC_BOX_MODE_COUNT];
+    uint16_t armed_slots[MUSIC_BOX_MODE_COUNT];
     /* Slots holding audio, and the subset of them currently sounding. */
-    uint8_t loaded_slots[MUSIC_BOX_MODE_COUNT];
-    uint8_t playing_slots[MUSIC_BOX_MODE_COUNT];
+    uint16_t loaded_slots[MUSIC_BOX_MODE_COUNT];
+    uint16_t playing_slots[MUSIC_BOX_MODE_COUNT];
+    /* Sounding out the current cycle, then stopping at the next boundary. */
+    uint16_t pending_stop_slots[MUSIC_BOX_MODE_COUNT];
+    bool blink_on;
+    uint64_t blink_at_milliseconds;
     uint8_t volume_percent;
     bool volume_visible;
     uint32_t volume_hold_milliseconds;

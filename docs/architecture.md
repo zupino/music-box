@@ -19,7 +19,7 @@ It produces three principal sinks:
 
 - WM8960 left speaker output;
 - WM8960 right speaker output;
-- eight stereo recording buffers in memory: four loops and four samples.
+- thirty-two stereo recording buffers in memory: sixteen loops and sixteen samples.
 
 The final speaker-bound signal is also reused internally as the reference for acoustic echo reduction.
 
@@ -60,7 +60,7 @@ package "music-box process" {
   component "rt_queue.c\nSPSC command/status queues" as QUEUE
   component "audio_engine.c\nJACK callback and mixer" as ENGINE
   component "transport.c\nsample-accurate beat/bar clock" as TRANSPORT
-  component "loop_bank.c\n4 stereo slot state machines\nper bank, loop or sampler" as LOOPS
+  component "loop_bank.c\n16 stereo slot state machines\nper bank, loop or sampler" as LOOPS
   component "echo_cancel.c\nstereo MIMO NLMS AEC" as AEC
 }
 
@@ -70,7 +70,7 @@ SYSTEMD --> MAIN : starts music-box
 
 MPD --> ALSAMIDI : USB MIDI
 ALSAMIDI --> MIDI : MIDI events
-MIDI --> QUEUE : pad commands\nnotes 52-55\npress / hold / release
+MIDI --> QUEUE : pad commands\nnotes 52-67\npress / hold / release
 MIDI --> QUEUE : mode changes\nknob 2
 MIDI --> FLUID : non-loop MIDI
 
@@ -111,7 +111,7 @@ end note
 | `midi.c` | ALSA sequencer ports, MPD discovery and MIDI forwarding |
 | `audio_engine.c` | JACK callback, signal routing, mode routing and final mixer |
 | `transport.c` | Drift-free sample/beat/bar clock |
-| `loop_bank.c` | One bank of four stereo buffers, their slot state machines and, for the sampler, a pre-roll ring; instantiated twice, once per mode |
+| `loop_bank.c` | One bank of sixteen stereo buffers, their slot state machines and, for the sampler, a pre-roll ring; instantiated twice, once per mode |
 | `echo_cancel.c` | Built-in two-reference/two-microphone NLMS AEC |
 | `rt_queue.c` | Lock-free SPSC command and status queues |
 | `volume.c` | ALSA simple-mixer hardware output volume driven by a MIDI knob |
@@ -142,8 +142,8 @@ The JACK callback is the only code allowed to mutate transport, slot buffers, sl
 | Source | `system:capture_2` | WM8960 right microphone |
 | Source | `fluidsynth:l_00` | FluidSynth left channel |
 | Source | `fluidsynth:r_00` | FluidSynth right channel |
-| Source | Loop slots 1-4 | Previously recorded stereo playback, repeating |
-| Source | Sampler slots 1-4 | Previously recorded stereo playback, one shot per tap |
+| Source | Loop slots 1-16 | Previously recorded stereo playback, repeating |
+| Source | Sampler slots 1-16 | Previously recorded stereo playback, one shot per tap |
 | Processor | Echo canceller | Removes an estimate of speaker bleed from microphone capture |
 | Processor | Quantized recorder | Writes cleaned microphone samples into an armed slot of either bank |
 | Internal sink/source | Sampler pre-roll | Rolling ring of the most recent cleaned input, laid down as the head of a sampler take |
@@ -152,8 +152,8 @@ The JACK callback is the only code allowed to mutate transport, slot buffers, sl
 | Processor | Stereo mixer | Sums synth, loop and sample playback |
 | Processor | Output gain/clip | Produces the exact samples sent to the codec |
 | Internal sink/source | AEC reference delay | Stores speaker-bound samples for later echo estimation |
-| Sink | Loop buffers | Four stereo recordings held in memory |
-| Sink | Sample buffers | Four further stereo recordings held in memory |
+| Sink | Loop buffers | Sixteen stereo recordings held in memory |
+| Sink | Sample buffers | Sixteen further stereo recordings held in memory |
 | Sink | `system:playback_1` | WM8960 left playback channel |
 | Sink | `system:playback_2` | WM8960 right playback channel |
 
@@ -248,7 +248,7 @@ component "ALSA simple mixer\nSpeaker / Headphone" as MIXER <<sink>>
 
 MPD --> ALSA : notes, note-off, CC,
 ALSA --> CLASSIFY
-CLASSIFY --> COMMANDS : notes 52-55\npress / hold / release
+CLASSIFY --> COMMANDS : notes 52-67\npress / hold / release
 CLASSIFY --> COMMANDS : mode CC\nloop or sampler
 COMMANDS --> STATES : consume in JACK callback
 CLASSIFY --> MIXER : volume CC\nhardware playback volume
@@ -330,9 +330,9 @@ A release received while still `ARMED_RECORD` is remembered. Recording begins at
 
 ## Performance modes
 
-The four pads drive one of two banks, chosen by the mode knob. Each bank is a
-separate `MusicBoxLoopBank` with its own four stereo buffers, so a sample never
-overwrites a loop. Both banks are mixed and both advance their boundaries on
+The sixteen pads drive one of two banks, chosen by the mode knob. Each bank is a
+separate `MusicBoxLoopBank` with its own sixteen stereo buffers, so a sample
+never overwrites a loop. Both banks are mixed and both advance their boundaries on
 every frame regardless of the active mode, which is what lets a loop keep
 playing after a switch to sampler mode.
 
@@ -363,6 +363,13 @@ written on every frame, and copies it into the slot as the head of the take when
 recording starts. The take then runs from the press, and costs one bounded
 `memcpy` per recording in the audio callback: 400 ms of stereo float at 48 kHz
 is about 154 kB.
+
+The ring only retains frames captured while the bank itself was silent. Tapping
+a loaded pad previews it, and that preview reaches the microphones; the echo
+canceller reduces the bleed rather than removing it. Keeping those frames would
+paste the tail of the outgoing sample onto the head of its replacement, so they
+are dropped instead, and a take that replaces a sounding pad simply begins at
+the hold.
 
 The engine records which bank each pad was pressed on and routes that pad's hold
 and release to the same bank. A mode change while a pad is down therefore cannot

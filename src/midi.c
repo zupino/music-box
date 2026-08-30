@@ -8,10 +8,13 @@
 #include <string.h>
 #include <time.h>
 
-/* Knob positions between the two thresholds keep the current mode, so a knob
-   parked near the middle cannot flap between modes on its own jitter. */
-#define MODE_KNOB_SAMPLER_FROM 72
-#define MODE_KNOB_LOOP_BELOW 56
+/* The mode knob is an absolute pot, so the switch sits at its midpoint: the
+   left half is loop, the right half sampler. Positions within
+   mode_cc_hysteresis of the midpoint keep the current mode, which is what stops
+   a resting knob from flapping on its own jitter; that dead band is also the
+   only rotation a mode change actually costs once the knob is near the middle,
+   so it is configurable and deliberately narrow. */
+#define MODE_KNOB_MIDPOINT 64
 
 static bool has_prefix(const char *text, const char *prefix)
 {
@@ -61,9 +64,10 @@ static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *ev
     if (event->type != SND_SEQ_EVENT_CONTROLLER || !midi->config.mode_control_enabled) return false;
     if (event->data.control.param != (unsigned int)midi->config.mode_cc) return false;
     const int value = event->data.control.value;
+    const int dead_band = (int)midi->config.mode_cc_hysteresis;
     MusicBoxMode mode = midi->mode;
-    if (value >= MODE_KNOB_SAMPLER_FROM) mode = MUSIC_BOX_MODE_SAMPLER;
-    else if (value < MODE_KNOB_LOOP_BELOW) mode = MUSIC_BOX_MODE_LOOP;
+    if (value >= MODE_KNOB_MIDPOINT + dead_band) mode = MUSIC_BOX_MODE_SAMPLER;
+    else if (value <= MODE_KNOB_MIDPOINT - dead_band) mode = MUSIC_BOX_MODE_LOOP;
     if (mode == midi->mode) return true;
     midi->mode = mode;
     const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,

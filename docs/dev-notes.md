@@ -411,6 +411,21 @@ The usual caveat still applies in the other direction: the parser rejects
 unknown keys, so once these are written the binary has to be updated before the
 config.
 
+Sixteen pads do need a config edit, though. A device still carrying
+`loop_notes=52,53,54,55` starts fine and keeps working, but only its bottom row
+is live and the display draws only that row. To light up the whole grid, replace
+the line rather than appending to it:
+
+```bash
+sudo sed -i 's/^loop_notes=.*/loop_notes=52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67/' \
+    /etc/music-box/music-box.conf
+sudo systemctl restart music-box.service
+```
+
+Check `free -m` afterwards: sixteen slots per bank reserve 246 MB at the shipped
+lengths. Add `mode_cc_hysteresis=2` at the same time to get the lighter mode
+switch; without it the built-in default already applies.
+
 ### Storage model: nothing is written to disk
 Worth stating plainly, because "sampler" suggests files and there are none.
 
@@ -424,10 +439,11 @@ and matches nothing the program produces.
 `systemctl restart music-box.service`. Recording over a slot frees nothing and
 allocates nothing; it overwrites the buffer that was allocated at startup.
 
-**How many fit.** Exactly four per bank, always. Eight recordings total, four
-loops and four samples. The count is fixed by `MUSIC_BOX_LOOP_COUNT` and the
-four pads, not by available memory, so nothing runs out and nothing is evicted:
-a fifth recording is not a capacity problem, it is simply not expressible.
+**How many fit.** Exactly sixteen per bank, always. Thirty-two recordings total,
+sixteen loops and sixteen samples. The count is fixed by `MUSIC_BOX_LOOP_COUNT`
+and the pad grid, not by available memory, so nothing runs out and nothing is
+evicted: a seventeenth recording is not a capacity problem, it is simply not
+expressible.
 
 **What a second costs.** Stereo 32-bit float at the JACK sample rate:
 
@@ -442,25 +458,27 @@ a fifth recording is not a capacity problem, it is simply not expressible.
 anything is ever recorded, because the audio callback cannot allocate. Each
 bank reserves its maximum length on all four slots:
 
-    loops    4 x max_loop_seconds           x 384 kB/s
-    samples  4 x max_sample_seconds         x 384 kB/s
-    pre-roll 1 x pad_hold_milliseconds/1000 x 384 kB/s
+    loops    16 x max_loop_seconds          x 384 kB/s
+    samples  16 x max_sample_seconds        x 384 kB/s
+    pre-roll  1 x pad_hold_milliseconds/1000 x 384 kB/s
 
 With the shipped config at 48 kHz (`max_loop_seconds=30`,
 `max_sample_seconds=10`, `pad_hold_milliseconds=400`):
 
 | Bank | Reserved |
 |---|---|
-| Loops | 46.1 MB |
-| Samples | 15.4 MB |
+| Loops | 184.3 MB |
+| Samples | 61.4 MB |
 | Pre-roll | 0.15 MB |
-| Total | 61.6 MB |
+| Total | 245.9 MB |
 
-Note that `config.c` defaults `max_loop_seconds` to 60, twice what the shipped
-config file sets, so a run with a hand-written config that omits the key
-reserves 92 MB for loops instead of 46 MB. On a 1 GB Pi 3B either is fine, but
-`max_loop_seconds=600` and `max_sample_seconds=600`, both of which the parser
-accepts, would ask for 1.8 GB and fail at startup.
+The startup banner prints this total, because with sixteen slots per bank it is
+no longer a number anyone will work out by eye. `config.c` used to default
+`max_loop_seconds` to 60 while the shipped config set 30; at four slots that was
+a 46 MB discrepancy, at sixteen it is 184 MB, so the built-in default was
+lowered to 30 to match. `max_loop_seconds=600` with `max_sample_seconds=600`,
+both of which the parser still accepts, would ask for 7.4 GB and fail at
+startup.
 
 **Disk usage of the installation itself** is unrelated and static: the binary,
 three unit files, the config and the helper scripts. The only large file on a
@@ -472,6 +490,73 @@ one place a real filesystem model would have to be designed, and the open
 questions are the format, where they live relative to `/etc/music-box`, whether
 a slot maps to a fixed filename, and what happens when a stored sample is longer
 than the current `max_sample_seconds`.
+
+### Second round of device findings
+
+Four items reported after the first build was tried on the box.
+
+**All sixteen pads, not four.** `MUSIC_BOX_LOOP_COUNT` is now 16 and
+`loop_notes` defaults to the full bank B, notes 52-67, listed bottom-left first
+so slot order matches the physical grid. `parse_loop_notes` now accepts one to
+sixteen notes instead of demanding exactly the slot count, and fills the rest
+with `MUSIC_BOX_NOTE_UNMAPPED`. That matters more than it looks: without it,
+every device carrying the old `loop_notes=52,53,54,55` would have failed to
+parse its configuration and the service would not have started after the
+update.
+
+The cost is memory, and it is not small. Sixteen slots in two banks at the
+shipped lengths reserve 246 MB, up from 62 MB, all of it at startup. See the
+storage model above; the startup banner now prints the figure.
+
+**Pending stop needed its own indication.** Pressing a playing loop arms a stop
+that only takes effect at the next boundary, and the loop rightly keeps sounding
+until then, but the screen gave no sign the press had registered. Arming now
+hatches the cell: still sounding, on the way out. This also exposed a missing
+event — cancelling a pending stop with a second press changed the slot state
+silently, so the display would have shown a loop as leaving forever.
+`MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED` closes that.
+
+**The mode knob asked for too much rotation.** The dead band was hard-coded at
+56 to 72, sixteen counts out of 127, about 34 degrees of an MPD218 pot before
+anything happened. It is now `mode_cc_hysteresis` either side of the midpoint,
+default 2, so the switch costs about 8 degrees. Nothing can make an absolute pot
+flip from any position — the switch is inherently at mid-travel — but the wiggle
+around that point is now small.
+
+**The sampler recorded its own preview.** Reported as noise at the head of a
+re-recorded sample. The cause is the pre-roll meeting the trigger gesture: a tap
+on a loaded pad previews it, the hold that turns the gesture into a recording
+only arrives 400 ms later, and the pre-roll ring spent exactly those 400 ms
+capturing the outgoing sample coming back through the microphones. The echo
+canceller reduces that bleed but does not remove it, so the residue was being
+laid down as the head of the replacement.
+
+The ring now only retains frames captured while the bank was silent;
+`mix_sample` sets a `sounding` flag and `push_preroll` discards its history
+whenever that flag is set. Frames from before the press are discarded too, since
+they predate the gesture. The consequence is that re-recording over a sounding
+pad starts at the hold and loses that head, while a first recording on a silent
+pad still spans the full press. That asymmetry is the right way round: during
+the preview the performer is listening, not playing.
+
+The same fix covers a case not reported yet — one sampler pad playing a long
+sample while another is held to record would have poisoned that pad's head too.
+
+### Display: sixteen cells in nineteen rows
+Four numbered boxes became a 4x4 grid, which leaves each cell 28x4 pixels and no
+room for a digit. That is fine, and arguably better: the grid has the same shape
+as the controller, so position identifies the pad. Slot 0 is drawn bottom-left,
+matching how the MPD218 labels its pads and the order the notes are listed in.
+
+Six cell states fit into four pixel rows as blank, baseline, outline, solid,
+hatched and blinking. Blinking is the screen's only self-driven cadence; it runs
+from `music_box_display_tick` and only while a pad is armed or recording, so an
+idle Music Box still redraws only on events. `invert_rectangle` went away with
+the numbered boxes.
+
+The ASCII framebuffer harness earned its keep again here — the grid, the legacy
+four-note layout and both blink phases were all checked that way before any of
+it reached the device.
 
 ### Not verified on hardware
 Written without access to the test Pi. Knob 2's actual controller number, the
