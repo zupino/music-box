@@ -24,11 +24,12 @@ int main(void)
 {
     MusicBoxConfig config;
 
-    /* All sixteen MPD218 pads are mapped out of the box, bottom-left first. */
+    /* Slot order follows the printed PAD 1..16 labels, not ascending notes. */
     music_box_config_defaults(&config);
     assert(music_box_config_mapped_pads(&config) == MUSIC_BOX_LOOP_COUNT);
-    assert(config.loop_notes[0] == 52u);
-    assert(config.loop_notes[MUSIC_BOX_LOOP_COUNT - 1u] == 67u);
+    assert(config.loop_notes[0] == 64u);
+    assert(config.loop_notes[3] == 67u);
+    assert(config.loop_notes[MUSIC_BOX_LOOP_COUNT - 1u] == 55u);
     assert(config.loop_select_cc == 12u);
     assert(config.sample_select_cc == 13u);
     assert(config.trim_start_cc == 14u);

@@ -76,15 +76,16 @@ All sixteen pads, notes 52 to 67, drive three performance modes. Knob 2 (K2,
 bank A, CC 9 by default) chooses between them, a third of its travel each:
 loop, then sampler, then pad.
 
-Pads are numbered the way the MPD218 labels them, bottom-left first, so pad 1 is
-note 52 and pad 16 is note 67. The display uses the same arrangement.
+Pads are numbered the way the MPD218 labels them, bottom-left first. In the
+factory bank-B preset pad 1 is note 64 and pad 16 is note 55 because MIDI notes
+ascend from the controller's opposite row. The display follows printed labels.
 
 ### Loop mode
 
-Loop mode manages tracks; it never records the microphones. Knob 4 selects
+Loop mode manages tracks; it never records or trims samples. Knob 4 selects
 among recorded samples only. Holding a pad assigns the selected sample to that
 pad's loop track: holding pad 2 assigns it to loop 2. A short press starts or
-stops the same track. K3 is no longer needed for assignment.
+stops the same track. K3 is no longer needed and is not shown in loop mode.
 Starts wait for the next beat, then the trimmed sample repeats at its exact
 length. Stops continue to use the configured `quantize` boundary.
 

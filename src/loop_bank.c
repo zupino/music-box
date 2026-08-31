@@ -535,8 +535,6 @@ void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot_index,
     }
     if (slot->play_position < slot->trim_start || slot->play_position >= slot->trim_end)
         slot->play_position = slot->trim_start;
-    emit_event(bank, MUSIC_BOX_EVENT_SAMPLE_TRIMMED, slot_index,
-               ((uint64_t)slot->trim_start << 32u) | (uint64_t)slot->trim_end);
 }
 
 void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,

@@ -183,9 +183,26 @@ int main(int argc, char **argv)
         if (route_counter == 0u) music_box_audio_engine_connect_ports(&engine);
         route_counter = (route_counter + 1u) % 10u;
         MusicBoxEvent event;
+        MusicBoxEvent latest_trim;
+        bool have_trim = false;
         while (music_box_event_queue_pop(&events, &event)) {
+            /* An OLED write per CC step turns a quick knob sweep into seconds
+               of stale animation. Keep only the newest trim position from
+               each 100 ms main-loop interval, just as volume is coalesced. */
+            if (event.type == MUSIC_BOX_EVENT_TRIM_CHANGED ||
+                event.type == MUSIC_BOX_EVENT_SAMPLE_TRIMMED) {
+                if (event.type == MUSIC_BOX_EVENT_TRIM_CHANGED) {
+                    latest_trim = event;
+                    have_trim = true;
+                }
+                continue;
+            }
             print_event(&event, music_box_audio_engine_sample_rate(&engine));
             music_box_display_handle_event(&display, &event);
+        }
+        if (have_trim) {
+            print_event(&latest_trim, music_box_audio_engine_sample_rate(&engine));
+            music_box_display_handle_event(&display, &latest_trim);
         }
         /* Knob moves are coalesced here so one screen redraw covers a sweep. */
         const uint32_t generation = music_box_volume_generation(&volume);

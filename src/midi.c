@@ -69,9 +69,11 @@ static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *eve
            the selection and could display S13 for a recording on pad 1. */
         editor = 1u;
     } else if (cc == (unsigned int)midi->config.trim_start_cc) {
+        if (midi->mode != MUSIC_BOX_MODE_SAMPLER) return true;
         command.type = MUSIC_BOX_COMMAND_SET_TRIM_START;
         editor = 2u;
     } else if (cc == (unsigned int)midi->config.trim_end_cc) {
+        if (midi->mode != MUSIC_BOX_MODE_SAMPLER) return true;
         command.type = MUSIC_BOX_COMMAND_SET_TRIM_END;
         editor = 3u;
     } else {

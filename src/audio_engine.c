@@ -182,6 +182,7 @@ static void process_commands(MusicBoxAudioEngine *engine)
             break;
         }
         case MUSIC_BOX_COMMAND_SET_TRIM_START:
+            if (engine->mode != MUSIC_BOX_MODE_SAMPLER) break;
             music_box_loop_bank_set_trim(&engine->sampler_bank,
                                          engine->selected_sample, true,
                                          command.value);
@@ -205,6 +206,7 @@ static void process_commands(MusicBoxAudioEngine *engine)
             }
             break;
         case MUSIC_BOX_COMMAND_SET_TRIM_END:
+            if (engine->mode != MUSIC_BOX_MODE_SAMPLER) break;
             music_box_loop_bank_set_trim(&engine->sampler_bank,
                                          engine->selected_sample, false,
                                          command.value);

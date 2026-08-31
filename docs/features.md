@@ -16,7 +16,7 @@ This page summarises the capabilities currently implemented on the main developm
 ### Stereo looper
 
 - sixteen independent stereo loop tracks, one per MPD218 pad;
-- MPD218 notes 52-67 mapped to pads 1-16, bottom-left first;
+- MPD218 bank-B notes 52-67 mapped in printed pad order (pad 1 is note 64);
 - a shorter note list leaves the remaining pads inert, so an older
   four-slot configuration still starts;
 - knob 4 selects an existing sampler recording;

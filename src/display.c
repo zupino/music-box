@@ -271,8 +271,7 @@ static void draw_status_column(MusicBoxDisplay *display)
         (void)snprintf(state, sizeof(state), "ARM %u",
                        first_slot(display->armed_slots[mode]));
     else if (display->mode == MUSIC_BOX_MODE_LOOP)
-        (void)snprintf(state, sizeof(state), "L%u S%u",
-                       (unsigned int)display->selected_loop + 1u,
+        (void)snprintf(state, sizeof(state), "S%u",
                        (unsigned int)display->selected_sample + 1u);
     /* In sampler mode the pressed pad is the recording/playback slot. K4 only
        chooses which stored sample K5/K6 edit, so it must not look like the
@@ -473,7 +472,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         break;
     case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
     case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
-        break;
+        return;
     case MUSIC_BOX_EVENT_TRIM_CHANGED:
         display->trim_slot = event->slot;
         display->trim_start = (uint8_t)(event->value & 0xffu);
