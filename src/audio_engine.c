@@ -121,6 +121,7 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
 
     if (target == MUSIC_BOX_MODE_SAMPLER &&
         command->type == MUSIC_BOX_COMMAND_PAD_PRESS) {
+        engine->pad_long_gesture[command->slot] = false;
         engine->recording_source = (MusicBoxRecordingSource)command->recording_source;
         music_box_loop_bank_set_recording_source(&engine->sampler_bank,
                                                  engine->recording_source);
@@ -131,11 +132,25 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
         music_box_loop_bank_pad_press(bank, command->slot, &engine->transport);
         break;
     case MUSIC_BOX_COMMAND_PAD_HOLD:
+        engine->pad_long_gesture[command->slot] = true;
         music_box_loop_bank_pad_hold(bank, command->slot, &engine->transport);
         break;
     case MUSIC_BOX_COMMAND_PAD_RELEASE:
     default:
         music_box_loop_bank_pad_release(bank, command->slot, &engine->transport);
+        /* A completed recording becomes the trim target immediately. Tapping
+           another sample for playback must not silently change the K4 target. */
+        if (target == MUSIC_BOX_MODE_SAMPLER &&
+            engine->pad_long_gesture[command->slot] &&
+            bank->slots[command->slot].recorded_frames > 0u) {
+            engine->pad_long_gesture[command->slot] = false;
+            engine->selected_sample = command->slot;
+            (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                .type = MUSIC_BOX_EVENT_SAMPLE_SELECTED,
+                .slot = command->slot,
+                .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+                .value = command->slot});
+        }
         break;
     }
 }

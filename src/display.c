@@ -199,7 +199,8 @@ static void draw_beat_rail(MusicBoxDisplay *display)
 }
 
 /*
- * One cell per pad, laid out like the controller: slot 0 is bottom-left.
+ * One cell per pad, laid out in printed-number order: slot 0 / PAD 1 is
+ * top-left, and slots advance left-to-right then top-to-bottom.
  *
  *   blank     the pad has no note assigned
  *   baseline  mapped but empty
@@ -219,8 +220,7 @@ static void draw_pad_grid(MusicBoxDisplay *display)
         if ((display->mapped_slots & bit) == 0u) continue;
         const unsigned int x =
             PAD_ORIGIN_X + (slot % MUSIC_BOX_PAD_COLUMNS) * PAD_COLUMN_PITCH;
-        const unsigned int y =
-            pad_row_y(MUSIC_BOX_PAD_ROWS - 1u - slot / MUSIC_BOX_PAD_COLUMNS);
+        const unsigned int y = pad_row_y(slot / MUSIC_BOX_PAD_COLUMNS);
 
         if ((busy & bit) != 0u) {
             if (display->blink_on) fill_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
@@ -273,9 +273,11 @@ static void draw_status_column(MusicBoxDisplay *display)
     else if (display->mode == MUSIC_BOX_MODE_LOOP)
         (void)snprintf(state, sizeof(state), "S%u",
                        (unsigned int)display->selected_sample + 1u);
-    /* In sampler mode the pressed pad is the recording/playback slot. K4 only
-       chooses which stored sample K5/K6 edit, so it must not look like the
-       active pad changed. */
+    else if (display->mode == MUSIC_BOX_MODE_SAMPLER)
+        /* Pads still choose recording/playback slots. This label is explicitly
+           the K4 trim target, which needs to remain visible before K5/K6 move. */
+        (void)snprintf(state, sizeof(state), "TRIM S%u",
+                       (unsigned int)display->selected_sample + 1u);
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
