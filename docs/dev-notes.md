@@ -566,8 +566,8 @@ sample while another is held to record would have poisoned that pad's head too.
 ### Display: stop stacking, start aligning
 Four numbered boxes became a 4x4 grid, which leaves no room for a digit. That is
 fine, and arguably better: the grid has the same shape as the controller, so
-position identifies the pad. Slot 0 is drawn bottom-left, matching how the
-MPD218 labels its pads and the order the notes are listed in.
+position identifies the pad. Slot 0 is now drawn top-left, matching the printed
+PAD 1 position; the factory preset's MIDI note rows run in the opposite order.
 
 The first attempt stacked the grid under a full-width header, and it was too
 tight: header, four cell rows and a footer do not fit in 32 rows with any room

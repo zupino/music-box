@@ -236,6 +236,35 @@ void music_box_loop_bank_set_recording_source(MusicBoxLoopBank *bank,
     bank->recording_source = source;
 }
 
+int music_box_loop_bank_start_monitor_recording(MusicBoxLoopBank *bank,
+                                                const MusicBoxTransport *transport)
+{
+    if (bank == NULL || transport == NULL ||
+        bank->mode != MUSIC_BOX_MODE_SAMPLER)
+        return -1;
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        MusicBoxLoopSlot *slot = &bank->slots[index];
+        if (slot->recorded_frames != 0u || slot->state != MUSIC_BOX_LOOP_EMPTY)
+            continue;
+        /* Pad-hold recording needs history from before its hold threshold;
+           monitor capture begins on the knob gesture and must not include it. */
+        bank->preroll_filled = 0u;
+        bank->recording_source = MUSIC_BOX_RECORD_MONITOR;
+        start_recording(bank, index, transport);
+        return (int)index;
+    }
+    return -1;
+}
+
+bool music_box_loop_bank_finish_recording(MusicBoxLoopBank *bank, uint8_t slot)
+{
+    if (bank == NULL || slot >= MUSIC_BOX_LOOP_COUNT ||
+        bank->slots[slot].state != MUSIC_BOX_LOOP_RECORDING)
+        return false;
+    finish_recording(bank, slot);
+    return true;
+}
+
 void music_box_loop_bank_pad_hold(MusicBoxLoopBank *bank,
                                   uint8_t slot_index,
                                   const MusicBoxTransport *transport)

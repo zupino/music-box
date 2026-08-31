@@ -199,7 +199,8 @@ static void draw_beat_rail(MusicBoxDisplay *display)
 }
 
 /*
- * One cell per pad, laid out like the controller: slot 0 is bottom-left.
+ * One cell per pad, laid out in printed-number order: slot 0 / PAD 1 is
+ * top-left, and slots advance left-to-right then top-to-bottom.
  *
  *   blank     the pad has no note assigned
  *   baseline  mapped but empty
@@ -219,8 +220,7 @@ static void draw_pad_grid(MusicBoxDisplay *display)
         if ((display->mapped_slots & bit) == 0u) continue;
         const unsigned int x =
             PAD_ORIGIN_X + (slot % MUSIC_BOX_PAD_COLUMNS) * PAD_COLUMN_PITCH;
-        const unsigned int y =
-            pad_row_y(MUSIC_BOX_PAD_ROWS - 1u - slot / MUSIC_BOX_PAD_COLUMNS);
+        const unsigned int y = pad_row_y(slot / MUSIC_BOX_PAD_COLUMNS);
 
         if ((busy & bit) != 0u) {
             if (display->blink_on) fill_rectangle(display, x, y, PAD_CELL_WIDTH, PAD_CELL_HEIGHT);
@@ -273,9 +273,11 @@ static void draw_status_column(MusicBoxDisplay *display)
     else if (display->mode == MUSIC_BOX_MODE_LOOP)
         (void)snprintf(state, sizeof(state), "S%u",
                        (unsigned int)display->selected_sample + 1u);
-    /* In sampler mode the pressed pad is the recording/playback slot. K4 only
-       chooses which stored sample K5/K6 edit, so it must not look like the
-       active pad changed. */
+    else if (display->mode == MUSIC_BOX_MODE_SAMPLER)
+        /* Pads still choose recording/playback slots. This label is explicitly
+           the K4 trim target, which needs to remain visible before K5/K6 move. */
+        (void)snprintf(state, sizeof(state), "TRIM S%u",
+                       (unsigned int)display->selected_sample + 1u);
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
@@ -360,9 +362,11 @@ bool music_box_display_init(MusicBoxDisplay *display,
         return false;
     }
 
+    const uint8_t segment_direction = config->display_rotate_180 ? 0xa0u : 0xa1u;
+    const uint8_t scan_direction = config->display_rotate_180 ? 0xc0u : 0xc8u;
     const uint8_t initialize[] = {
         0xae, 0xd5, 0x80, 0xa8, 0x1f, 0xd3, 0x00, 0x40,
-        0x8d, 0x14, 0x20, 0x00, 0xa1, 0xc8, 0xda, 0x02,
+        0x8d, 0x14, 0x20, 0x00, segment_direction, scan_direction, 0xda, 0x02,
         0x81, 0x8f, 0xd9, 0xf1, 0xdb, 0x40, 0xa4, 0xa6, 0xaf,
     };
     display->enabled = send_bytes(display->fd, 0x00u, initialize,
@@ -404,7 +408,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
        footer bars, so it is not a slot number and skips the slot guard. */
     if (event->type == MUSIC_BOX_EVENT_BEAT) {
         display->beat = event->slot;
-        commit(display);
+        display->dirty = true;
         return;
     }
     if (event->bank >= MUSIC_BOX_MODE_COUNT || event->slot >= MUSIC_BOX_LOOP_COUNT)
@@ -472,6 +476,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         break;
     case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
     case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
+    case MUSIC_BOX_EVENT_SAMPLE_BANK_FULL:
         return;
     case MUSIC_BOX_EVENT_TRIM_CHANGED:
         display->trim_slot = event->slot;
@@ -484,7 +489,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     default:
         return;
     }
-    commit(display);
+    display->dirty = true;
 }
 
 void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent)
@@ -495,7 +500,7 @@ void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent)
     display->volume_visible = true;
     display->volume_hide_at_milliseconds =
         monotonic_milliseconds() + display->volume_hold_milliseconds;
-    commit(display);
+    display->dirty = true;
 }
 
 void music_box_display_tick(MusicBoxDisplay *display)
@@ -503,26 +508,31 @@ void music_box_display_tick(MusicBoxDisplay *display)
     if (!display->enabled) return;
     const uint64_t now = monotonic_milliseconds();
     if (display->volume_visible) {
-        if (now < display->volume_hide_at_milliseconds) return;
-        display->volume_visible = false;
-        commit(display);
-        return;
+        if (now >= display->volume_hide_at_milliseconds) {
+            display->volume_visible = false;
+            display->dirty = true;
+        }
     }
     if (display->trim_visible) {
-        if (now < display->trim_hide_at_milliseconds) return;
-        display->trim_visible = false;
-        commit(display);
-        return;
+        if (now >= display->trim_hide_at_milliseconds) {
+            display->trim_visible = false;
+            display->dirty = true;
+        }
     }
     /* Armed and recording cells blink. This is the screen's only self-driven
        cadence and it runs solely while one of them is pending, so an idle
        Music Box still redraws only when something actually happens. */
     const unsigned int mode = (unsigned int)display->mode;
-    if ((display->armed_slots[mode] | display->recording_slots[mode]) == 0u) return;
-    if (now < display->blink_at_milliseconds) return;
-    display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
-    display->blink_on = !display->blink_on;
-    commit(display);
+    if ((display->armed_slots[mode] | display->recording_slots[mode]) != 0u &&
+        now >= display->blink_at_milliseconds) {
+        display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
+        display->blink_on = !display->blink_on;
+        display->dirty = true;
+    }
+    if (display->dirty) {
+        display->dirty = false;
+        commit(display);
+    }
 }
 
 bool music_box_display_active(const MusicBoxDisplay *display)

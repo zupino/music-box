@@ -214,12 +214,45 @@ static void test_sampler_preroll_drops_its_own_playback(void)
     music_box_loop_bank_destroy(&bank);
 }
 
+static void test_monitor_recording_uses_first_empty_slot(void)
+{
+    MusicBoxEventQueue events;
+    music_box_event_queue_init(&events);
+    MusicBoxTransport transport;
+    assert(music_box_transport_init(&transport, 100u, 60000u, 4u));
+    MusicBoxLoopBank bank;
+    assert(music_box_loop_bank_init(&bank, 100u, 10u, MUSIC_BOX_QUANTIZE_OFF,
+                                    MUSIC_BOX_MODE_SAMPLER, 100u, &events));
+    bank.slots[0].recorded_frames = 1u;
+    bank.slots[0].trim_end = 1u;
+    bank.slots[0].state = MUSIC_BOX_LOOP_STOPPED;
+    bank.preroll_filled = bank.preroll_capacity;
+
+    const int slot = music_box_loop_bank_start_monitor_recording(&bank, &transport);
+    assert(slot == 1);
+    assert(bank.recording_source == MUSIC_BOX_RECORD_MONITOR);
+    assert(bank.slots[1].state == MUSIC_BOX_LOOP_RECORDING);
+    assert(bank.slots[1].recorded_frames == 0u);
+    process_frame(&bank, &transport, 0.75f);
+    assert(music_box_loop_bank_finish_recording(&bank, 1u));
+    assert(bank.slots[1].state == MUSIC_BOX_LOOP_STOPPED);
+    assert(bank.slots[1].recorded_frames == 1u);
+
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        bank.slots[index].recorded_frames = 1u;
+        bank.slots[index].state = MUSIC_BOX_LOOP_STOPPED;
+    }
+    assert(music_box_loop_bank_start_monitor_recording(&bank, &transport) < 0);
+    music_box_loop_bank_destroy(&bank);
+}
+
 int main(void)
 {
     test_loop_mode();
     test_recorded_sample_selection();
     test_sampler_mode();
     test_sampler_preroll_drops_its_own_playback();
+    test_monitor_recording_uses_first_empty_slot();
     puts("loop bank tests passed");
     return 0;
 }

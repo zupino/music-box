@@ -55,9 +55,11 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
         printf("%s %u: maximum recording length reached\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_SLOT_STARTED:
+        if (event->bank == (uint8_t)MUSIC_BOX_MODE_PAD) return;
         printf("%s %u: triggered\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_SLOT_FINISHED:
+        if (event->bank == (uint8_t)MUSIC_BOX_MODE_PAD) return;
         printf("%s %u: finished\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
@@ -85,6 +87,9 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
         printf("Sample %u: trim %u%%-%u%%\n", slot,
                (unsigned int)((event->value & 0xffu) * 100u / 127u),
                (unsigned int)(((event->value >> 8u) & 0xffu) * 100u / 127u));
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_BANK_FULL:
+        printf("Monitor recording not started: all sample slots are full\n");
         break;
     default:
         break;
@@ -181,7 +186,7 @@ int main(int argc, char **argv)
     uint32_t volume_generation = music_box_volume_generation(&volume);
     while (keep_running && !music_box_audio_engine_jack_shutdown(&engine)) {
         if (route_counter == 0u) music_box_audio_engine_connect_ports(&engine);
-        route_counter = (route_counter + 1u) % 10u;
+        route_counter = (route_counter + 1u) % 20u;
         MusicBoxEvent event;
         MusicBoxEvent latest_trim;
         bool have_trim = false;
@@ -214,7 +219,9 @@ int main(int argc, char **argv)
             music_box_display_show_volume(&display, percent);
         }
         music_box_display_tick(&display);
-        const struct timespec pause = {.tv_sec = 0, .tv_nsec = 100000000};
+        /* Batch OLED changes at up to 20 Hz. This keeps I2C writes out of the
+           event-drain loop while making the latest pad state visible quickly. */
+        const struct timespec pause = {.tv_sec = 0, .tv_nsec = 50000000};
         nanosleep(&pause, NULL);
     }
 

@@ -76,7 +76,7 @@ All sixteen pads, notes 52 to 67, drive three performance modes. Knob 2 (K2,
 bank A, CC 9 by default) chooses between them, a third of its travel each:
 loop, then sampler, then pad.
 
-Pads are numbered the way the MPD218 labels them, bottom-left first. In the
+Pads are numbered the way the MPD218 labels them, top-left first. In the
 factory bank-B preset pad 1 is note 64 and pad 16 is note 55 because MIDI notes
 ascend from the controller's opposite row. The display follows printed labels.
 
@@ -106,8 +106,9 @@ quantized: a sample lasts exactly as long as its pad was held.
 
 The pad itself always chooses the recording/playback slot. Knob 4 only chooses
 the existing sample edited by the trim knobs: K5 moves its start and K6 moves
-its end. While either trim knob moves, the OLED shows the whole sample as an
-outlined horizontal bar and its retained range as a filled section.
+its end. Sampler mode shows the current K4 target as `TRIM Sx`; while either
+trim knob moves, the OLED shows that sample name, the whole sample as an
+outlined horizontal bar, and its retained range as a filled section.
 
 1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
    from the moment of the press, with no wait for a beat or bar.
@@ -210,8 +211,13 @@ lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
 `mode_control_enabled=false` pins the box to pad mode.
 
-`quantize` applies to loop mode only. Sampler recording is always unquantized,
-and pad mode records nothing at all.
+`quantize` applies to loop mode only. Sampler and monitor recording are always
+unquantized. In pad mode, move K3 in either direction to start capturing the
+final speaker mix into the first empty sampler slot; pause, then move K3 again
+in either direction to stop. A continuous sweep is one gesture, not many
+toggles. The completed take is selected for K4/K5/K6 trimming and can be
+assigned to a loop like any microphone recording. Music Box refuses to start
+when all sample slots are occupied rather than overwriting a take.
 
 Factory MPD218 presets vary here too. Confirm which controller knob 2 sends
 with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
@@ -265,11 +271,15 @@ initialization failure does not stop the audio engine. Configure it with:
 display_enabled=true
 display_i2c_device=/dev/i2c-1
 display_i2c_address=0x3c
+display_rotate_180=false
 ```
 
 The display shares the I2C bus with the WM8960 but uses a different address.
 Display writes happen outside the JACK callback so I2C traffic cannot block the
 real-time audio thread.
+
+Set `display_rotate_180=true` when the OLED is mounted upside-down. The SSD1306
+controller rotates the complete image, including the pad grid and trim screen.
 
 ### Volume knob
 
