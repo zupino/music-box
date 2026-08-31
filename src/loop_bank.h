@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The MPD218's full 4x4 pad grid. Slot 0 is printed PAD 1 at bottom-left;
+/* The MPD218's full 4x4 pad grid. Slot 0 is printed PAD 1 at top-left;
    configuration maps the factory preset's opposite MIDI note-row order. */
 #define MUSIC_BOX_LOOP_COUNT 16u
 #define MUSIC_BOX_PAD_COLUMNS 4u

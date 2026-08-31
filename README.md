@@ -76,7 +76,7 @@ All sixteen pads, notes 52 to 67, drive three performance modes. Knob 2 (K2,
 bank A, CC 9 by default) chooses between them, a third of its travel each:
 loop, then sampler, then pad.
 
-Pads are numbered the way the MPD218 labels them, bottom-left first. In the
+Pads are numbered the way the MPD218 labels them, top-left first. In the
 factory bank-B preset pad 1 is note 64 and pad 16 is note 55 because MIDI notes
 ascend from the controller's opposite row. The display follows printed labels.
 
@@ -106,8 +106,9 @@ quantized: a sample lasts exactly as long as its pad was held.
 
 The pad itself always chooses the recording/playback slot. Knob 4 only chooses
 the existing sample edited by the trim knobs: K5 moves its start and K6 moves
-its end. While either trim knob moves, the OLED shows the whole sample as an
-outlined horizontal bar and its retained range as a filled section.
+its end. Sampler mode shows the current K4 target as `TRIM Sx`; while either
+trim knob moves, the OLED shows that sample name, the whole sample as an
+outlined horizontal bar, and its retained range as a filled section.
 
 1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
    from the moment of the press, with no wait for a beat or bar.
