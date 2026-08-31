@@ -137,6 +137,7 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->display_enabled = true;
     config->display_i2c_address = 0x3cu;
     strcpy(config->display_i2c_device, "/dev/i2c-1");
+    config->display_rotate_180 = false;
     config->display_volume_seconds = 2u;
     config->volume_control_enabled = true;
     config->volume_db_curve = true;
@@ -296,6 +297,8 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
             valid = errno == 0 && end != value && *trim(end) == '\0' &&
                     address >= 0x08u && address <= 0x77u;
             config->display_i2c_address = (uint8_t)address;
+        } else if (strcmp(key, "display_rotate_180") == 0) {
+            valid = parse_bool(value, &config->display_rotate_180);
         } else if (strcmp(key, "display_volume_seconds") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 60u;
             config->display_volume_seconds = (uint32_t)unsigned_value;
