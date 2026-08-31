@@ -117,6 +117,17 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->mode_control_enabled = true;
     config->mode_cc = 9u;
     config->mode_cc_hysteresis = 2u;
+    config->loop_select_cc = 12u;
+    config->sample_select_cc = 13u;
+    config->trim_start_cc = 14u;
+    config->trim_end_cc = 15u;
+    /* CTRL BANK and NR CONFIG are controller-local buttons on common MPD218
+       presets and may emit no MIDI at all. These mappings are therefore
+       configurable and disabled until a device preset exposes them as CCs. */
+    config->monitor_modifier_enabled = false;
+    config->monitor_modifier_cc = 127u;
+    config->loop_panic_enabled = false;
+    config->loop_panic_cc = 126u;
     config->tempo_millibpm = 120000u;
     config->beats_per_bar = 4u;
     config->quantize_mode = MUSIC_BOX_QUANTIZE_BAR;
@@ -134,6 +145,11 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->aec_delay_frames = 512u;
     config->aec_step_size = 0.05f;
     config->aec_double_talk_ratio = 4.0f;
+    config->noise_gate_enabled = true;
+    config->noise_gate_threshold = 0.015f;
+    config->noise_gate_floor_gain = 0.10f;
+    config->noise_gate_attack_ms = 5.0f;
+    config->noise_gate_release_ms = 120.0f;
     config->synth_gain = 0.70f;
     config->loop_gain = 0.70f;
     config->master_gain = 0.80f;
@@ -161,11 +177,26 @@ size_t music_box_config_mapped_pads(const MusicBoxConfig *config)
     return count;
 }
 
+MusicBoxMode music_box_mode_for_knob(MusicBoxMode current, uint8_t value,
+                                     uint8_t hysteresis)
+{
+    const int position = (int)value;
+    const int dead_band = (int)hysteresis;
+    if (position <= MUSIC_BOX_MODE_FIRST_SWITCH - dead_band) return MUSIC_BOX_MODE_LOOP;
+    if (position >= MUSIC_BOX_MODE_SECOND_SWITCH + dead_band) return MUSIC_BOX_MODE_PAD;
+    if (position >= MUSIC_BOX_MODE_FIRST_SWITCH + dead_band &&
+        position <= MUSIC_BOX_MODE_SECOND_SWITCH - dead_band)
+        return MUSIC_BOX_MODE_SAMPLER;
+    /* Inside a dead band: hold whatever the knob last resolved to. */
+    return current;
+}
+
 const char *music_box_mode_name(MusicBoxMode mode)
 {
     switch (mode) {
     case MUSIC_BOX_MODE_LOOP: return "loop";
     case MUSIC_BOX_MODE_SAMPLER: return "sampler";
+    case MUSIC_BOX_MODE_PAD: return "pad";
     default: return "unknown";
     }
 }
@@ -209,11 +240,35 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
         } else if (strcmp(key, "mode_control_enabled") == 0) {
             valid = parse_bool(value, &config->mode_control_enabled);
         } else if (strcmp(key, "mode_cc_hysteresis") == 0) {
-            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 32u;
+            /* Three zones of about 42 counts, so a wider dead band than half a
+               zone would make the middle one unreachable. */
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 16u;
             config->mode_cc_hysteresis = (uint8_t)unsigned_value;
         } else if (strcmp(key, "mode_cc") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
             config->mode_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "loop_select_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->loop_select_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "sample_select_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->sample_select_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "trim_start_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->trim_start_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "trim_end_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->trim_end_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "monitor_modifier_enabled") == 0) {
+            valid = parse_bool(value, &config->monitor_modifier_enabled);
+        } else if (strcmp(key, "monitor_modifier_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->monitor_modifier_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "loop_panic_enabled") == 0) {
+            valid = parse_bool(value, &config->loop_panic_enabled);
+        } else if (strcmp(key, "loop_panic_cc") == 0) {
+            valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
+            config->loop_panic_cc = (uint8_t)unsigned_value;
         } else if (strcmp(key, "bpm") == 0) {
             valid = parse_float(value, &float_value) && float_value >= 1.0f && float_value <= 400.0f;
             config->tempo_millibpm = (uint32_t)(float_value * 1000.0f + 0.5f);
@@ -262,6 +317,18 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
             valid = parse_float(value, &config->aec_step_size) && config->aec_step_size > 0.0f && config->aec_step_size <= 1.0f;
         } else if (strcmp(key, "aec_double_talk_ratio") == 0) {
             valid = parse_float(value, &config->aec_double_talk_ratio) && config->aec_double_talk_ratio > 0.0f;
+        } else if (strcmp(key, "noise_gate_enabled") == 0) {
+            valid = parse_bool(value, &config->noise_gate_enabled);
+        } else if (strcmp(key, "noise_gate_threshold") == 0) {
+            valid = parse_float(value, &config->noise_gate_threshold) &&
+                    config->noise_gate_threshold >= 0.0f && config->noise_gate_threshold <= 1.0f;
+        } else if (strcmp(key, "noise_gate_floor_gain") == 0) {
+            valid = parse_float(value, &config->noise_gate_floor_gain) &&
+                    config->noise_gate_floor_gain >= 0.0f && config->noise_gate_floor_gain <= 1.0f;
+        } else if (strcmp(key, "noise_gate_attack_ms") == 0) {
+            valid = parse_float(value, &config->noise_gate_attack_ms) && config->noise_gate_attack_ms > 0.0f;
+        } else if (strcmp(key, "noise_gate_release_ms") == 0) {
+            valid = parse_float(value, &config->noise_gate_release_ms) && config->noise_gate_release_ms > 0.0f;
         } else if (strcmp(key, "synth_gain") == 0) {
             valid = parse_float(value, &config->synth_gain) && config->synth_gain >= 0.0f && config->synth_gain <= 2.0f;
         } else if (strcmp(key, "loop_gain") == 0) {

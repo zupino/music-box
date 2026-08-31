@@ -8,14 +8,6 @@
 #include <string.h>
 #include <time.h>
 
-/* The mode knob is an absolute pot, so the switch sits at its midpoint: the
-   left half is loop, the right half sampler. Positions within
-   mode_cc_hysteresis of the midpoint keep the current mode, which is what stops
-   a resting knob from flapping on its own jitter; that dead band is also the
-   only rotation a mode change actually costs once the knob is near the middle,
-   so it is configurable and deliberately narrow. */
-#define MODE_KNOB_MIDPOINT 64
-
 static bool has_prefix(const char *text, const char *prefix)
 {
     return strncmp(text, prefix, strlen(prefix)) == 0;
@@ -38,9 +30,60 @@ static int loop_slot_for_note(const MusicBoxMidi *midi, unsigned int note)
 
 static void queue_pad_command(MusicBoxMidi *midi, MusicBoxCommandType type, uint8_t slot)
 {
-    const MusicBoxCommand command = {.type = type, .slot = slot, .mode = 0u, .tempo_millibpm = 0u};
+    const MusicBoxCommand command = {.type = type, .slot = slot, .mode = 0u,
+                                     .value = 0u,
+                                     .recording_source = midi->pad_recording_source[slot],
+                                     .tempo_millibpm = 0u};
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; event dropped\n");
+}
+
+static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *event)
+{
+    if (event->type != SND_SEQ_EVENT_CONTROLLER) return false;
+    const unsigned int cc = event->data.control.param;
+    const int raw = event->data.control.value;
+    if (raw < 0 || raw > 127) return false;
+
+    if (midi->config.monitor_modifier_enabled &&
+        cc == (unsigned int)midi->config.monitor_modifier_cc) {
+        midi->monitor_modifier_down = raw >= 64;
+        return true;
+    }
+    MusicBoxCommand command = {.slot = 0u, .mode = 0u, .value = (uint8_t)raw,
+                               .recording_source = 0u, .tempo_millibpm = 0u};
+    unsigned int editor = 4u;
+    if (midi->config.loop_panic_enabled &&
+        cc == (unsigned int)midi->config.loop_panic_cc) {
+        if (raw >= 64) command.type = MUSIC_BOX_COMMAND_STOP_ALL_LOOPS;
+        else return true;
+    } else if (cc == (unsigned int)midi->config.loop_select_cc) {
+        command.type = MUSIC_BOX_COMMAND_SELECT_LOOP;
+        command.value = (uint8_t)(((unsigned int)raw * MUSIC_BOX_LOOP_COUNT) / 128u);
+        editor = 0u;
+    } else if (cc == (unsigned int)midi->config.sample_select_cc) {
+        command.type = MUSIC_BOX_COMMAND_SELECT_SAMPLE;
+        command.value = (uint8_t)(((unsigned int)raw * MUSIC_BOX_LOOP_COUNT) / 128u);
+        editor = 1u;
+    } else if (cc == (unsigned int)midi->config.trim_start_cc) {
+        command.type = MUSIC_BOX_COMMAND_SET_TRIM_START;
+        editor = 2u;
+    } else if (cc == (unsigned int)midi->config.trim_end_cc) {
+        command.type = MUSIC_BOX_COMMAND_SET_TRIM_END;
+        editor = 3u;
+    } else {
+        return false;
+    }
+    if (editor < 4u && midi->control_value_sent[editor] &&
+        midi->last_control_value[editor] == command.value)
+        return true;
+    if (editor < 4u) {
+        midi->last_control_value[editor] = command.value;
+        midi->control_value_sent[editor] = true;
+    }
+    if (!music_box_command_queue_push(midi->commands, &command))
+        fprintf(stderr, "MIDI command queue full; control dropped\n");
+    return true;
 }
 
 /*
@@ -58,21 +101,24 @@ static void check_pad_holds(MusicBoxMidi *midi, uint64_t now)
     }
 }
 
-/* The mode knob is absolute, so the mode only follows it once it is moved. */
+/* The mode knob is absolute, so the mode only follows it once it is moved. The
+   dead band around each switch point is the only rotation a change costs once
+   the knob is near one, so it is configurable and deliberately narrow. */
 static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *event)
 {
     if (event->type != SND_SEQ_EVENT_CONTROLLER || !midi->config.mode_control_enabled) return false;
     if (event->data.control.param != (unsigned int)midi->config.mode_cc) return false;
-    const int value = event->data.control.value;
-    const int dead_band = (int)midi->config.mode_cc_hysteresis;
-    MusicBoxMode mode = midi->mode;
-    if (value >= MODE_KNOB_MIDPOINT + dead_band) mode = MUSIC_BOX_MODE_SAMPLER;
-    else if (value <= MODE_KNOB_MIDPOINT - dead_band) mode = MUSIC_BOX_MODE_LOOP;
+    const int position = event->data.control.value;
+    if (position < 0 || position > 127) return true;
+    const MusicBoxMode mode = music_box_mode_for_knob(midi->mode, (uint8_t)position,
+                                                      midi->config.mode_cc_hysteresis);
     if (mode == midi->mode) return true;
     midi->mode = mode;
     const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,
                                      .slot = 0u,
                                      .mode = (uint8_t)mode,
+                                     .value = 0u,
+                                     .recording_source = 0u,
                                      .tempo_millibpm = 0u};
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; mode change dropped\n");
@@ -97,15 +143,29 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
     if (note_event) slot = loop_slot_for_note(midi, event->data.note.note);
     if (slot >= 0) {
         const bool pressed = event->type == SND_SEQ_EVENT_NOTEON && event->data.note.velocity > 0u;
-        midi->pad_held[slot] = pressed;
+        /* In pad mode the note belongs to the synthesizer, so the pad plays the
+           SoundFont and the command below only drives the display. A Note Off
+           follows its own Note On, so changing mode mid-press cannot hang a
+           note on FluidSynth. */
+        bool forward = midi->mode == MUSIC_BOX_MODE_PAD;
         if (pressed) {
             midi->pad_hold_sent[slot] = false;
             midi->pad_press_milliseconds[slot] = monotonic_milliseconds();
+            midi->pad_forwarded[slot] = forward;
+            midi->pad_recording_source[slot] = midi->monitor_modifier_down
+                ? (uint8_t)MUSIC_BOX_RECORD_MONITOR
+                : (uint8_t)MUSIC_BOX_RECORD_MICROPHONE;
+        } else {
+            forward = midi->pad_forwarded[slot];
+            midi->pad_forwarded[slot] = false;
         }
+        /* Only a looping or sampling pad needs its hold timed. */
+        midi->pad_held[slot] = pressed && !forward;
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
-        return;
+        if (!forward) return;
     }
     if (handle_mode_controller(midi, event)) return;
+    if (queue_control_command(midi, event)) return;
     if (handle_volume_controller(midi, event)) return;
     snd_seq_ev_set_source(event, (unsigned char)output_port);
     snd_seq_ev_set_subs(event);
@@ -174,13 +234,20 @@ static void *midi_thread(void *argument)
             next_connection_scan = now + 1000u;
         }
         snd_seq_event_t *event = NULL;
-        while (snd_seq_event_input(sequencer, &event) >= 0)
+        /* Do not let a CC flood monopolise this thread: hold recognition and
+           delivery of later pad gestures get a scheduling point every batch. */
+        unsigned int event_count = 0u;
+        while (event_count < 64u && snd_seq_event_input(sequencer, &event) >= 0) {
             handle_event(midi, sequencer, output_port, event);
+            event_count++;
+        }
         /* The 5 ms poll is the resolution of the hold threshold; the recording
            itself still starts on an exact transport boundary. */
         check_pad_holds(midi, monotonic_milliseconds());
-        const struct timespec pause = {.tv_sec = 0, .tv_nsec = 5000000};
-        nanosleep(&pause, NULL);
+        if (event_count < 64u) {
+            const struct timespec pause = {.tv_sec = 0, .tv_nsec = 5000000};
+            nanosleep(&pause, NULL);
+        }
     }
     snd_seq_close(sequencer);
     return NULL;
@@ -192,6 +259,7 @@ bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config, Musi
     midi->config = *config;
     midi->commands = commands;
     midi->volume = volume;
+    midi->mode = MUSIC_BOX_MODE_PAD;
     atomic_init(&midi->running, true);
     if (pthread_create(&midi->thread, NULL, midi_thread, midi) != 0) {
         fprintf(stderr, "Cannot create MIDI thread\n");

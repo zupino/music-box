@@ -6,18 +6,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MUSIC_BOX_QUEUE_CAPACITY 64u
+#define MUSIC_BOX_QUEUE_CAPACITY 256u
 
 /*
- * Performance mode. It selects which pad bank the MPD218 pads drive, and the
- * same value identifies the bank that produced a status event.
+ * Performance mode. It selects what the MPD218 pads do, and the same value
+ * identifies the bank that produced a status event. Pad mode owns no bank: its
+ * notes go to the synthesizer, and only the display tracks them.
  */
 typedef enum {
     MUSIC_BOX_MODE_LOOP = 0,
-    MUSIC_BOX_MODE_SAMPLER
+    MUSIC_BOX_MODE_SAMPLER,
+    MUSIC_BOX_MODE_PAD
 } MusicBoxMode;
 
-#define MUSIC_BOX_MODE_COUNT 2u
+#define MUSIC_BOX_MODE_COUNT 3u
 
 typedef enum {
     MUSIC_BOX_COMMAND_PAD_PRESS = 1,
@@ -25,13 +27,25 @@ typedef enum {
     MUSIC_BOX_COMMAND_PAD_HOLD,
     MUSIC_BOX_COMMAND_PAD_RELEASE,
     MUSIC_BOX_COMMAND_SET_TEMPO,
-    MUSIC_BOX_COMMAND_SET_MODE
+    MUSIC_BOX_COMMAND_SET_MODE,
+    MUSIC_BOX_COMMAND_SELECT_LOOP,
+    MUSIC_BOX_COMMAND_SELECT_SAMPLE,
+    MUSIC_BOX_COMMAND_SET_TRIM_START,
+    MUSIC_BOX_COMMAND_SET_TRIM_END,
+    MUSIC_BOX_COMMAND_STOP_ALL_LOOPS
 } MusicBoxCommandType;
+
+typedef enum {
+    MUSIC_BOX_RECORD_MICROPHONE = 0,
+    MUSIC_BOX_RECORD_MONITOR
+} MusicBoxRecordingSource;
 
 typedef struct {
     MusicBoxCommandType type;
     uint8_t slot;
     uint8_t mode;
+    uint8_t value;
+    uint8_t recording_source;
     uint32_t tempo_millibpm;
 } MusicBoxCommand;
 
@@ -43,11 +57,15 @@ typedef enum {
     MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED,
     MUSIC_BOX_EVENT_LOOP_STOPPED,
     MUSIC_BOX_EVENT_LOOP_FULL,
-    MUSIC_BOX_EVENT_SAMPLE_STARTED,
-    MUSIC_BOX_EVENT_SAMPLE_FINISHED,
+    /* A slot began or stopped sounding: a sampler one-shot, or a pad-mode
+       note being held. Loops use the RECORD_FINISHED and LOOP_STOPPED pair. */
+    MUSIC_BOX_EVENT_SLOT_STARTED,
+    MUSIC_BOX_EVENT_SLOT_FINISHED,
     MUSIC_BOX_EVENT_TEMPO_CHANGED,
     MUSIC_BOX_EVENT_MODE_CHANGED,
-    MUSIC_BOX_EVENT_BEAT
+    MUSIC_BOX_EVENT_BEAT,
+    MUSIC_BOX_EVENT_LOOP_SELECTED,
+    MUSIC_BOX_EVENT_SAMPLE_SELECTED
 } MusicBoxEventType;
 
 typedef struct {

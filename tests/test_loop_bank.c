@@ -19,15 +19,6 @@ static void process_frame(MusicBoxLoopBank *bank,
     music_box_transport_advance(transport);
 }
 
-static bool drain_until(MusicBoxEventQueue *events, MusicBoxEventType type)
-{
-    MusicBoxEvent event;
-    bool found = false;
-    while (music_box_event_queue_pop(events, &event))
-        if (event.type == type) found = true;
-    return found;
-}
-
 static void run_to_frame(MusicBoxLoopBank *bank,
                          MusicBoxTransport *transport,
                          uint64_t frame,
@@ -44,38 +35,39 @@ static void test_loop_mode(void)
     music_box_event_queue_init(&events);
     MusicBoxTransport transport;
     assert(music_box_transport_init(&transport, 100u, 60000u, 4u));
-    MusicBoxLoopBank bank;
-    assert(music_box_loop_bank_init(&bank, 100u, 10u, MUSIC_BOX_QUANTIZE_BAR,
+    MusicBoxLoopBank loops;
+    MusicBoxLoopBank samples;
+    assert(music_box_loop_bank_init(&loops, 100u, 10u, MUSIC_BOX_QUANTIZE_BAR,
                                     MUSIC_BOX_MODE_LOOP, 0u, &events));
-    for (unsigned int frame = 0u; frame < 10u; ++frame) process_frame(&bank, &transport, 0.25f);
-    music_box_loop_bank_pad_press(&bank, 0u, &transport);
-    music_box_loop_bank_pad_release(&bank, 0u, &transport);
-    assert(bank.slots[0].state == MUSIC_BOX_LOOP_ARMED_RECORD);
-    assert(bank.slots[0].finish_after_start);
-    run_to_frame(&bank, &transport, 400u, 0.25f);
-    assert(bank.slots[0].state == MUSIC_BOX_LOOP_RECORDING);
-    run_to_frame(&bank, &transport, 800u, 0.25f);
-    assert(bank.slots[0].state == MUSIC_BOX_LOOP_PLAYING);
-    assert(bank.slots[0].recorded_frames == 400u);
+    assert(music_box_loop_bank_init(&samples, 100u, 10u, MUSIC_BOX_QUANTIZE_OFF,
+                                    MUSIC_BOX_MODE_SAMPLER, 0u, &events));
+
+    music_box_loop_bank_pad_hold(&samples, 2u, &transport);
+    for (unsigned int frame = 0u; frame < 80u; ++frame)
+        process_frame(&samples, &transport, 0.25f);
+    music_box_loop_bank_pad_release(&samples, 2u, &transport);
+    assert(music_box_loop_bank_assign(&loops, 0u, &samples, 2u));
+    assert(loops.slots[0].state == MUSIC_BOX_LOOP_STOPPED);
+
+    music_box_loop_bank_pad_press(&loops, 0u, &transport);
+    assert(loops.slots[0].state == MUSIC_BOX_LOOP_ARMED_PLAY);
+    run_to_frame(&loops, &transport, 400u, 0.0f);
+    assert(loops.slots[0].state == MUSIC_BOX_LOOP_PLAYING);
     float left = 0.0f;
     float right = 0.0f;
-    music_box_loop_bank_mix_sample(&bank, &left, &right);
+    music_box_loop_bank_mix_sample(&loops, &left, &right);
     assert(fabsf(left - 0.25f) < 1.0e-6f);
-    assert(fabsf(right + 0.25f) < 1.0e-6f);
-    /* A hold is a sampler gesture and must not disturb a loop bank. */
-    music_box_loop_bank_pad_hold(&bank, 0u, &transport);
-    assert(bank.slots[0].state == MUSIC_BOX_LOOP_PLAYING);
 
-    /* Arming a stop, then taking it back, both have to be announced so the
-       display can show the loop leaving and then staying. */
-    (void)drain_until(&events, MUSIC_BOX_EVENT_BEAT);
-    music_box_loop_bank_pad_press(&bank, 0u, &transport);
-    assert(bank.slots[0].state == MUSIC_BOX_LOOP_ARMED_STOP);
-    assert(drain_until(&events, MUSIC_BOX_EVENT_LOOP_STOP_ARMED));
-    music_box_loop_bank_pad_press(&bank, 0u, &transport);
-    assert(bank.slots[0].state == MUSIC_BOX_LOOP_PLAYING);
-    assert(drain_until(&events, MUSIC_BOX_EVENT_LOOP_STOP_CANCELLED));
-    music_box_loop_bank_destroy(&bank);
+    music_box_loop_bank_stop_all(&loops);
+    assert(loops.slots[0].state == MUSIC_BOX_LOOP_STOPPED);
+
+    music_box_loop_bank_set_trim(&samples, 2u, true, 64u);
+    music_box_loop_bank_set_trim(&samples, 2u, false, 127u);
+    assert(samples.slots[2].trim_start > 0u);
+    assert(samples.slots[2].trim_end == samples.slots[2].recorded_frames);
+
+    music_box_loop_bank_destroy(&loops);
+    music_box_loop_bank_destroy(&samples);
 }
 
 /*

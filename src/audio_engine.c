@@ -42,8 +42,8 @@ static MusicBoxLoopBank *bank_for_mode(MusicBoxAudioEngine *engine, MusicBoxMode
 static void set_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
 {
     /* Nothing is stopped here: loops recorded in loop mode keep playing while
-       the sampler pads are in use, and vice versa. */
-    if (mode != MUSIC_BOX_MODE_LOOP && mode != MUSIC_BOX_MODE_SAMPLER) return;
+       the sampler pads are in use, and while the pads play the synthesizer. */
+    if ((unsigned int)mode >= MUSIC_BOX_MODE_COUNT) return;
     if (mode == engine->mode) return;
     engine->mode = mode;
     const MusicBoxEvent event = {
@@ -55,6 +55,26 @@ static void set_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
     (void)music_box_event_queue_push(engine->events, &event);
 }
 
+/*
+ * Pad mode has no bank: the MIDI thread has already forwarded the note to the
+ * synthesizer, and the command reaches here only so the screen can light the
+ * cell while the pad is down.
+ */
+static void report_pad_note(MusicBoxAudioEngine *engine,
+                            const MusicBoxCommand *command)
+{
+    if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) return;
+    const MusicBoxEvent event = {
+        .type = command->type == MUSIC_BOX_COMMAND_PAD_PRESS
+                    ? MUSIC_BOX_EVENT_SLOT_STARTED
+                    : MUSIC_BOX_EVENT_SLOT_FINISHED,
+        .slot = command->slot,
+        .bank = (uint8_t)MUSIC_BOX_MODE_PAD,
+        .value = 0u,
+    };
+    (void)music_box_event_queue_push(engine->events, &event);
+}
+
 static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand *command)
 {
     if (command->slot >= MUSIC_BOX_LOOP_COUNT) return;
@@ -62,7 +82,42 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
        gesture follow it there even if the mode knob moved in between. */
     if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS)
         engine->pad_bank[command->slot] = engine->mode;
-    MusicBoxLoopBank *bank = bank_for_mode(engine, engine->pad_bank[command->slot]);
+    const MusicBoxMode target = engine->pad_bank[command->slot];
+    if (target == MUSIC_BOX_MODE_PAD) {
+        report_pad_note(engine, command);
+        return;
+    }
+    MusicBoxLoopBank *bank = bank_for_mode(engine, target);
+
+    if (target == MUSIC_BOX_MODE_LOOP) {
+        /* Loop gestures are resolved on hold/release. Deferring the short tap
+           avoids briefly arming (or stopping) a track before the same gesture
+           becomes an assignment. */
+        if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS) {
+            engine->pad_long_gesture[command->slot] = false;
+            return;
+        }
+        if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) {
+            engine->pad_long_gesture[command->slot] = true;
+            (void)music_box_loop_bank_assign(&engine->loop_bank, command->slot,
+                                             &engine->sampler_bank,
+                                             engine->selected_sample);
+            return;
+        }
+        if (engine->pad_long_gesture[command->slot]) {
+            engine->pad_long_gesture[command->slot] = false;
+            return;
+        }
+        music_box_loop_bank_pad_press(bank, command->slot, &engine->transport);
+        return;
+    }
+
+    if (target == MUSIC_BOX_MODE_SAMPLER &&
+        command->type == MUSIC_BOX_COMMAND_PAD_PRESS) {
+        engine->recording_source = (MusicBoxRecordingSource)command->recording_source;
+        music_box_loop_bank_set_recording_source(&engine->sampler_bank,
+                                                 engine->recording_source);
+    }
 
     switch (command->type) {
     case MUSIC_BOX_COMMAND_PAD_PRESS:
@@ -94,6 +149,35 @@ static void process_commands(MusicBoxAudioEngine *engine)
         case MUSIC_BOX_COMMAND_SET_TEMPO:
             music_box_transport_set_tempo(&engine->transport, command.tempo_millibpm);
             emit_tempo_event(engine);
+            break;
+        case MUSIC_BOX_COMMAND_SELECT_LOOP:
+            engine->selected_loop = command.value;
+            (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                .type = MUSIC_BOX_EVENT_LOOP_SELECTED,
+                .slot = engine->selected_loop,
+                .bank = (uint8_t)MUSIC_BOX_MODE_LOOP,
+                .value = engine->selected_loop});
+            break;
+        case MUSIC_BOX_COMMAND_SELECT_SAMPLE:
+            engine->selected_sample = command.value;
+            (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                .type = MUSIC_BOX_EVENT_SAMPLE_SELECTED,
+                .slot = engine->selected_sample,
+                .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+                .value = engine->selected_sample});
+            break;
+        case MUSIC_BOX_COMMAND_SET_TRIM_START:
+            music_box_loop_bank_set_trim(&engine->sampler_bank,
+                                         engine->selected_sample, true,
+                                         command.value);
+            break;
+        case MUSIC_BOX_COMMAND_SET_TRIM_END:
+            music_box_loop_bank_set_trim(&engine->sampler_bank,
+                                         engine->selected_sample, false,
+                                         command.value);
+            break;
+        case MUSIC_BOX_COMMAND_STOP_ALL_LOOPS:
+            music_box_loop_bank_stop_all(&engine->loop_bank);
             break;
         default:
             break;
@@ -135,8 +219,13 @@ static int audio_process(jack_nframes_t frame_count, void *argument)
                                       microphone_left[frame], microphone_right[frame],
                                       final_left, final_right,
                                       &clean_left, &clean_right);
-        music_box_loop_bank_record_sample(&engine->loop_bank, clean_left, clean_right);
-        music_box_loop_bank_record_sample(&engine->sampler_bank, clean_left, clean_right);
+        music_box_noise_gate_process(&engine->noise_gate, &clean_left, &clean_right);
+        const float record_left = engine->recording_source == MUSIC_BOX_RECORD_MONITOR
+                                      ? final_left : clean_left;
+        const float record_right = engine->recording_source == MUSIC_BOX_RECORD_MONITOR
+                                       ? final_right : clean_right;
+        music_box_loop_bank_record_sample(&engine->sampler_bank,
+                                          record_left, record_right);
         output_left[frame] = final_left;
         output_right[frame] = final_right;
         music_box_transport_advance(&engine->transport);
@@ -179,20 +268,38 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
         fprintf(stderr, "Cannot connect to JACK (status 0x%x). Is music-box-jack running?\n", status);
         return false;
     }
-    engine->mode = MUSIC_BOX_MODE_LOOP;
+    engine->mode = MUSIC_BOX_MODE_PAD;
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
     if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
-        !music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode,
+        !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
+                                    config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio) ||
+        !music_box_noise_gate_init(&engine->noise_gate, config->noise_gate_enabled,
+                                   sample_rate, config->noise_gate_threshold,
+                                   config->noise_gate_floor_gain,
+                                   config->noise_gate_attack_ms,
+                                   config->noise_gate_release_ms)) {
+        fprintf(stderr, "Cannot initialize the transport or echo canceller\n");
+        music_box_audio_engine_destroy(engine);
+        return false;
+    }
+    /* Sampler storage is reserved up front; loop tracks reference it. */
+    if (!music_box_loop_bank_init(&engine->loop_bank, sample_rate, config->max_loop_seconds, config->quantize_mode,
                                   MUSIC_BOX_MODE_LOOP, 0u, events) ||
         /* A sample is never quantized: it lasts exactly as long as its pad was
            held, so it captures a spoken word or a hit rather than a bar. The
            pre-roll covers the hold that precedes the recording gesture. */
         !music_box_loop_bank_init(&engine->sampler_bank, sample_rate, config->max_sample_seconds,
                                   MUSIC_BOX_QUANTIZE_OFF, MUSIC_BOX_MODE_SAMPLER,
-                                  config->pad_hold_milliseconds, events) ||
-        !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,
-                                    config->aec_delay_frames, config->aec_step_size, config->aec_double_talk_ratio)) {
-        fprintf(stderr, "Cannot initialize the audio engine buffers\n");
+                                  config->pad_hold_milliseconds, events)) {
+        fprintf(stderr,
+                "Cannot reserve the recording buffers: %u sample slots of %u s "
+                "need about %.0f MB at %u Hz. Lower max_sample_seconds in "
+                "music-box.conf.\n",
+                (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config->max_sample_seconds,
+                (double)MUSIC_BOX_LOOP_COUNT *
+                    (double)config->max_sample_seconds *
+                    (double)sample_rate * 2.0 * sizeof(float) / 1.0e6,
+                sample_rate);
         music_box_audio_engine_destroy(engine);
         return false;
     }

@@ -24,6 +24,9 @@ typedef struct {
     uint32_t tempo_millibpm;
     uint8_t beat;
     MusicBoxMode mode;
+    MusicBoxRecordingSource recording_source;
+    uint8_t selected_loop;
+    uint8_t selected_sample;
     /* Pads with a note assigned; the rest are left blank on the grid. */
     uint16_t mapped_slots;
     uint16_t recording_slots[MUSIC_BOX_MODE_COUNT];
@@ -35,6 +38,8 @@ typedef struct {
     uint16_t pending_stop_slots[MUSIC_BOX_MODE_COUNT];
     bool blink_on;
     uint64_t blink_at_milliseconds;
+    /* Consecutive failed frames; the screen is only given up after several. */
+    unsigned int write_failures;
     uint8_t volume_percent;
     bool volume_visible;
     uint32_t volume_hold_milliseconds;
@@ -51,5 +56,7 @@ void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent);
 /* Called periodically so a volume indication can time out. */
 void music_box_display_tick(MusicBoxDisplay *display);
 void music_box_display_destroy(MusicBoxDisplay *display);
+/* True once the panel has been initialised and has not since been given up. */
+bool music_box_display_active(const MusicBoxDisplay *display);
 
 #endif

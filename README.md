@@ -1,6 +1,6 @@
 # Music Box
 
-Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into a headless stereo synthesizer, sixteen-slot live looper and sixteen-pad sampler.
+Music Box turns a Raspberry Pi, Waveshare WM8960 Audio HAT and Akai MPD218 into a headless stereo synthesizer, sixteen-slot live looper, sixteen-pad sampler and SoundFont pad controller.
 
 The project deliberately stays small: one C11 process for audio/loop state/MIDI routing, JACK for low-latency audio, ALSA sequencer MIDI, FluidSynth as a separate service, and no bundled third-party source or SoundFonts.
 
@@ -27,9 +27,13 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 
 - stereo recording from both WM8960 microphones;
 - sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
-- hold to record, release to finish, press a playing loop to stop it;
-- a second performance mode, sampler, where each pad holds a one-shot recording;
-- knob 2 switches between loop and sampler mode without silencing running loops;
+- sampler-only recording from either cleaned microphones or the speaker monitor;
+- sample assignment to loop tracks, with beat-anchored starts;
+- three performance modes on the same pads: loop, sampler and pad;
+- sampler mode gives each pad a one-shot recording of its own;
+- pad mode plays the FluidSynth SoundFont straight from the sixteen pads;
+- knob 2 switches mode without silencing anything already playing;
+- knobs 3-6 select tracks and samples and trim sample heads and tails;
 - non-loop MIDI forwarded to FluidSynth;
 - sample-accurate shared beat/bar transport;
 - beat- or bar-quantized record start, finish and stop;
@@ -52,7 +56,8 @@ Also intended: Ubuntu Server LTS when the WM8960 driver is functioning, and the 
 
 ```text
 MPD218 -> Music Box MIDI router
-            |-- notes 52-55 -> loop or sampler pad commands
+            |-- notes 52-67 -> loop or sampler pad commands
+            |                  (forwarded to FluidSynth in pad mode)
             |-- knob 2      -> performance mode
             `-- other MIDI -> FluidSynth
 
@@ -60,38 +65,46 @@ FluidSynth JACK L/R -----------+
 Loop and sample playback L/R --+--> Music Box mixer --> WM8960 speakers
                                |          |
                                |          `--> exact AEC reference
-WM8960 microphones --> AEC ----+--> quantized loop recorder
+WM8960 microphones --> AEC ----+--> unquantized sampler recorder
 ```
 
 FluidSynth is routed through Music Box rather than directly to the physical playback ports so AEC sees the exact loudspeaker signal.
 
 ## Controls
 
-All sixteen pads, notes 52 to 67, drive two performance modes. Knob 2 (K2,
-bank A, CC 9 by default) chooses between them: the left half of its travel is
-loop mode, the right half sampler.
+All sixteen pads, notes 52 to 67, drive three performance modes. Knob 2 (K2,
+bank A, CC 9 by default) chooses between them, a third of its travel each:
+loop, then sampler, then pad.
 
 Pads are numbered the way the MPD218 labels them, bottom-left first, so pad 1 is
 note 52 and pad 16 is note 67. The display uses the same arrangement.
 
 ### Loop mode
 
-The default. With `quantize=bar`:
+Loop mode manages tracks; it never records the microphones. Knob 3 selects a
+track for display, knob 4 selects a recorded sample, and holding a track's pad
+assigns the selected sample to it. A short press starts or stops that track.
+Starts wait for the next beat, then the trimmed sample repeats at its exact
+length. Stops continue to use the configured `quantize` boundary.
 
-1. Hold a stopped pad: recording is armed.
-2. Recording starts at the next common bar boundary.
-3. Release: finish is armed.
-4. Recording closes at the next bar and begins looping.
-5. Press a playing pad: stop is armed for the next bar. The loop keeps sounding
+1. Turn knob 4 to select a recorded sample.
+2. Hold a loop pad to assign that sample to the track.
+3. Tap the pad: playback starts at the next beat.
+4. Press a playing pad: stop is armed for the configured boundary. The loop keeps sounding
    out the current cycle, and the display hatches its cell to show it is on the
    way out. Pressing again before the boundary cancels the stop.
 
-A quick press/release before recording starts creates one complete quantization interval. This often leaves the physical pad tap before the recorded material; dedicated tap-noise filtering remains deferred.
+The application starts in pad mode, so startup never turns a parked mode knob
+into an unexpected recording or loop-control gesture.
 
 ### Sampler mode
 
 Every pad is a one-shot recorder. Nothing repeats on its own, and nothing is
 quantized: a sample lasts exactly as long as its pad was held.
+
+The pad itself always chooses the recording/playback slot. Knob 4 only chooses
+the existing sample edited by the trim knobs: K5 moves its start and K6 moves
+its end. The sampler screen therefore does not present K4 as the active slot.
 
 1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
    from the moment of the press, with no wait for a beat or bar.
@@ -113,20 +126,41 @@ starts the take at the hold instead, losing that head. That is deliberate: those
 400 ms contain the outgoing sample coming back through the microphones, which
 would otherwise be pasted onto the front of its own replacement.
 
-The two modes own separate banks of sixteen slots, so a sample never overwrites
-a loop. Loops recorded in loop mode keep playing while sampler pads are used, and
+### Pad mode
+
+The sixteen pads play the FluidSynth SoundFont. Nothing is recorded and nothing
+is consumed: each pad's note is forwarded to the synthesizer with its velocity
+intact, so the pads behave like any other keyboard into FluidSynth, and the
+display lights a cell while its pad is held.
+
+Loops and samples carry on playing underneath, which is the point — pad mode is
+how you play over what you have already recorded. A Note Off always follows its
+own Note On, so turning the knob while a pad is down cannot leave a note hanging
+on the synthesizer.
+
+Sampler audio and assigned loop-track state are separate, so assignment does
+not overwrite a sample. Assigned loops keep playing while sampler pads are used, and
 samples keep playing after a switch back. That also means a sampler recording
 captures any loop still running through the microphones unless the loops are
 stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
-it is moved, so a freshly started service is always in loop mode regardless of
-where the knob is parked. The switch sits at the knob's midpoint, with a dead
-band of `mode_cc_hysteresis` counts either side that holds the current mode.
-That dead band is the only rotation a mode change costs once the knob is near
-the middle — 2 counts out of 127 by default, roughly 8 degrees on the MPD218 pot
-— so lower it for a lighter switch and raise it if a resting knob starts
-flapping on its own jitter.
+it is moved, so a freshly started service is always in pad mode regardless of
+where the knob is parked. Its travel splits into three zones with a switch at
+each boundary:
+
+| Knob | Mode |
+|---|---|
+| 0–42 | loop |
+| 43–84 | sampler |
+| 85–127 | pad |
+
+Each switch has a dead band of `mode_cc_hysteresis` counts either side that
+holds the current mode. That dead band is the only rotation a mode change costs
+once the knob is near a switch — 2 counts out of 127 by default, roughly 8
+degrees on the MPD218 pot — so lower it for a lighter switch and raise it if a
+resting knob starts flapping on its own jitter. It is capped at 16, because a
+dead band wider than half a zone would make sampler mode unreachable.
 
 ## Configuration
 
@@ -163,31 +197,49 @@ pad_hold_milliseconds=400
 mode_cc_hysteresis=2
 ```
 
-`max_sample_seconds` allocates sixteen more stereo buffers of that length at
-startup, on top of the sixteen `max_loop_seconds` loop buffers. Every buffer is
-reserved whether or not it is ever used, because the audio callback cannot
-allocate, so the total is `16 x (max_loop_seconds + max_sample_seconds) x
-384 kB` at 48 kHz — about 246 MB with the shipped values. The startup banner
-prints the figure. `pad_hold_milliseconds` is the line between
+`max_sample_seconds` allocates sixteen stereo buffers of that length at startup.
+Loop tracks reference assigned sample storage, so they do not duplicate it.
+The total is `16 x max_sample_seconds x 384 kB` at 48 kHz — about 61 MB with
+the shipped value. The startup banner prints the figure.
+`pad_hold_milliseconds` is the line between
 triggering a sample and recording a new one, and it also sizes the pre-roll, so
 lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
-`mode_control_enabled=false` pins the box to loop mode.
+`mode_control_enabled=false` pins the box to pad mode.
 
-`quantize` applies to loop mode only. Sampler recording is always unquantized.
+`quantize` applies to loop mode only. Sampler recording is always unquantized,
+and pad mode records nothing at all.
 
 Factory MPD218 presets vary here too. Confirm which controller knob 2 sends
 with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
 
 ### Mode and pad display
 
-An SSD1306-compatible 128x32 I2C OLED at address `0x3c` shows, top to bottom:
-the active mode and either the tempo or the pad being recorded; a 4x4 pad map;
-and a four-bar beat footer with the current beat filled. The footer is present
-on every screen.
+An SSD1306-compatible 128x32 I2C OLED at address `0x3c`. The panel is wide and
+short, so the screen is laid out as three columns rather than stacked rows:
 
-The pad map is a 4x4 grid with the same shape as the controller, pad 1 at the
-bottom left, so a cell's position identifies its pad without needing a number:
+```text
++-----------------------------+-+-----------+---+
+| [    ][    ][    ][    ]    | | LOOP      | . |
+| [    ][    ][    ][    ]    | |           | # |
+| [    ][####][    ][    ]    | | 120 BPM   | . |
+| [####][::::][~~~~][    ]    | | REC 6     | . |
++-----------------------------+-+-----------+---+
+```
+
+Nothing is stacked. The 4x4 map takes the left, a rule separates it from the
+status text, and the beat runs as a rail of four dots down the right edge with
+the current one filled. Each column then gets the panel's full height: the pad
+cells are as tall as the display allows, and mode, tempo and record state each
+get their own line instead of sharing one row.
+
+Every gutter and outer margin is 3 pixels, the dots share the map's row pitch,
+and the text lines sit flush with the map's top and bottom, so the three columns
+run on one rhythm. The beat rail is present on every screen, including the
+volume overlay.
+
+The map has the same shape as the controller, pad 1 at the bottom left, so a
+cell's position identifies its pad without needing a number:
 
 | Cell | Meaning |
 |---|---|
@@ -200,7 +252,8 @@ bottom left, so a cell's position identifies its pad without needing a number:
 
 So in loop mode the solid cells are the loops playing back and a hatched cell is
 one you have asked to stop, still finishing its current pass. In sampler mode
-the outlined cells are the pads with a sample ready to trigger.
+the outlined cells are the pads with a sample ready to trigger. In pad mode
+nothing is stored, so a cell is solid only while its pad is held.
 
 The default device is `/dev/i2c-1`; the display is optional, and an
 initialization failure does not stop the audio engine. Configure it with:
@@ -286,7 +339,8 @@ make
 make test
 ```
 
-The unit suite covers transport boundaries, lock-free queues, quantized loop and sampler states, and synthetic AEC convergence.
+The unit suite covers transport boundaries, lock-free queues, assigned-loop and
+sampler states, microphone gating, and synthetic AEC convergence.
 
 ## Development notes
 

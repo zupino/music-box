@@ -30,7 +30,8 @@ static void print_usage(const char *program)
 static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
 {
     const unsigned int slot = (unsigned int)event->slot + 1u;
-    const char *bank = event->bank == (uint8_t)MUSIC_BOX_MODE_SAMPLER ? "Sample" : "Loop";
+    static const char *const banks[MUSIC_BOX_MODE_COUNT] = {"Loop", "Sample", "Pad"};
+    const char *bank = banks[event->bank < MUSIC_BOX_MODE_COUNT ? event->bank : 0u];
     switch (event->type) {
     case MUSIC_BOX_EVENT_RECORD_ARMED:
         printf("%s %u: recording armed\n", bank, slot);
@@ -53,10 +54,10 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_LOOP_FULL:
         printf("%s %u: maximum recording length reached\n", bank, slot);
         break;
-    case MUSIC_BOX_EVENT_SAMPLE_STARTED:
+    case MUSIC_BOX_EVENT_SLOT_STARTED:
         printf("%s %u: triggered\n", bank, slot);
         break;
-    case MUSIC_BOX_EVENT_SAMPLE_FINISHED:
+    case MUSIC_BOX_EVENT_SLOT_FINISHED:
         printf("%s %u: finished\n", bank, slot);
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
@@ -103,7 +104,7 @@ int main(int argc, char **argv)
     if (!music_box_audio_engine_init(&engine, &config, &commands, &events)) return EXIT_FAILURE;
     MusicBoxDisplay display;
     if (!music_box_display_init(&display, &config))
-        fprintf(stderr, "Continuing without the beat display\n");
+        fprintf(stderr, "Continuing without the display\n");
     MusicBoxVolume volume;
     if (!music_box_volume_init(&volume, &config))
         fprintf(stderr, "Continuing without MIDI volume control\n");
@@ -120,24 +121,28 @@ int main(int argc, char **argv)
            music_box_quantize_mode_name(config.quantize_mode),
            (double)config.tempo_millibpm / 1000.0,
            config.beats_per_bar);
+    /* Stated explicitly: a blank panel is otherwise indistinguishable from a
+       process that never got this far. */
+    if (music_box_display_active(&display))
+        printf("Display: %s at 0x%02x, ready\n", config.display_i2c_device,
+               (unsigned int)config.display_i2c_address);
+    else
+        printf("Display: not running (%s)\n",
+               config.display_enabled ? "initialization failed" : "disabled in config");
     const size_t pads = music_box_config_mapped_pads(&config);
     printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
            pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
            (unsigned int)config.pad_hold_milliseconds);
-    /* Every buffer is reserved up front, so the total is worth stating: with
-       sixteen pads a generous max_loop_seconds adds up quickly. */
+    /* Sampler buffers are reserved up front; loop tracks reference them. */
     const double megabytes_per_second =
         (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;
-    printf("Mode: %s at startup, reserving %.0f MB for %u loop slots of %u s "
-           "and %u sample slots of %u s\n",
-           music_box_mode_name(MUSIC_BOX_MODE_LOOP),
-           (double)MUSIC_BOX_LOOP_COUNT *
-               (double)(config.max_loop_seconds + config.max_sample_seconds) *
+    printf("Mode: %s at startup, reserving %.0f MB for %u sample slots of %u s\n",
+           music_box_mode_name(MUSIC_BOX_MODE_PAD),
+           (double)MUSIC_BOX_LOOP_COUNT * (double)config.max_sample_seconds *
                megabytes_per_second,
-           (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_loop_seconds,
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
-        printf("Mode knob: CC %u selects loop or sampler, dead band +/-%u around 64\n",
+        printf("Mode knob: CC %u selects loop, sampler or pad in thirds, dead band +/-%u\n",
                (unsigned int)config.mode_cc, (unsigned int)config.mode_cc_hysteresis);
     else
         printf("Mode knob: disabled\n");
