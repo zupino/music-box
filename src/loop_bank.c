@@ -85,6 +85,7 @@ static void finish_recording(MusicBoxLoopBank *bank, uint8_t slot_index)
     slot->play_position = 0u;
     if (slot->recorded_frames == 0u) {
         slot->state = MUSIC_BOX_LOOP_EMPTY;
+        slot->assigned_sample = UINT8_MAX;
         return;
     }
     slot->trim_end = slot->recorded_frames;
@@ -465,10 +466,9 @@ bool music_box_loop_bank_assign(MusicBoxLoopBank *loops, uint8_t loop_slot,
     target->trim_start = source->trim_start;
     target->trim_end = source->trim_end;
     target->play_position = target->trim_start;
+    target->assigned_sample = sample_slot;
     target->state = MUSIC_BOX_LOOP_STOPPED;
-    emit_event(loops, MUSIC_BOX_EVENT_RECORD_FINISHED, loop_slot,
-               target->trim_end - target->trim_start);
-    emit_event(loops, MUSIC_BOX_EVENT_LOOP_STOPPED, loop_slot, 0u);
+    emit_event(loops, MUSIC_BOX_EVENT_SAMPLE_ASSIGNED, loop_slot, sample_slot);
     return true;
 }
 
@@ -535,6 +535,26 @@ void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot_index,
     }
     if (slot->play_position < slot->trim_start || slot->play_position >= slot->trim_end)
         slot->play_position = slot->trim_start;
+    emit_event(bank, MUSIC_BOX_EVENT_SAMPLE_TRIMMED, slot_index,
+               ((uint64_t)slot->trim_start << 32u) | (uint64_t)slot->trim_end);
+}
+
+void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,
+                                          const MusicBoxLoopBank *samples,
+                                          uint8_t sample_slot)
+{
+    if (sample_slot >= MUSIC_BOX_LOOP_COUNT) return;
+    const MusicBoxLoopSlot *source = &samples->slots[sample_slot];
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        MusicBoxLoopSlot *target = &loops->slots[index];
+        if (target->assigned_sample != sample_slot) continue;
+        target->recorded_frames = source->recorded_frames;
+        target->trim_start = source->trim_start;
+        target->trim_end = source->trim_end;
+        if (target->play_position < target->trim_start ||
+            target->play_position >= target->trim_end)
+            target->play_position = target->trim_start;
+    }
 }
 
 static void push_preroll(MusicBoxLoopBank *bank, float left, float right)

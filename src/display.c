@@ -446,6 +446,14 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     case MUSIC_BOX_EVENT_SAMPLE_SELECTED:
         display->selected_sample = event->slot;
         break;
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGNED:
+        display->loaded_slots[MUSIC_BOX_MODE_LOOP] |= bit;
+        display->playing_slots[MUSIC_BOX_MODE_LOOP] &= clear;
+        display->pending_stop_slots[MUSIC_BOX_MODE_LOOP] &= clear;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
+        break;
     default:
         return;
     }

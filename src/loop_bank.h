@@ -41,6 +41,8 @@ typedef struct {
     size_t trim_end;
     const float *playback_left;
     const float *playback_right;
+    /* Sampler slot referenced by an assigned loop, or UINT8_MAX. */
+    uint8_t assigned_sample;
 } MusicBoxLoopSlot;
 
 /*
@@ -116,6 +118,9 @@ bool music_box_loop_bank_select_recorded(const MusicBoxLoopBank *bank,
 void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank);
 void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot,
                                   bool start, uint8_t controller_value);
+void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,
+                                          const MusicBoxLoopBank *samples,
+                                          uint8_t sample_slot);
 void music_box_loop_bank_set_recording_source(MusicBoxLoopBank *bank,
                                               MusicBoxRecordingSource source);
 

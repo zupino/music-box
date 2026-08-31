@@ -66,6 +66,19 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_MODE_CHANGED:
         printf("Mode: %s\n", music_box_mode_name((MusicBoxMode)event->value));
         break;
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGNED:
+        printf("Loop %u: assigned sample %llu\n", slot,
+               (unsigned long long)event->value + 1u);
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
+        printf("Loop %u: sample %llu assignment failed (sample is empty)\n",
+               slot, (unsigned long long)event->value + 1u);
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
+        printf("Sample %u: trim %llu..%llu frames\n", slot,
+               (unsigned long long)(event->value >> 32u),
+               (unsigned long long)(event->value & UINT32_MAX));
+        break;
     case MUSIC_BOX_EVENT_BEAT:
         break;
     default:

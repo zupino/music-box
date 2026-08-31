@@ -99,10 +99,16 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
         }
         if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) {
             engine->pad_long_gesture[command->slot] = true;
-            (void)music_box_loop_bank_assign(&engine->loop_bank,
-                                             engine->selected_loop,
-                                             &engine->sampler_bank,
-                                             engine->selected_sample);
+            if (!music_box_loop_bank_assign(&engine->loop_bank,
+                                            engine->selected_loop,
+                                            &engine->sampler_bank,
+                                            engine->selected_sample)) {
+                (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                    .type = MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED,
+                    .slot = engine->selected_loop,
+                    .bank = (uint8_t)MUSIC_BOX_MODE_LOOP,
+                    .value = engine->selected_sample});
+            }
             return;
         }
         if (engine->pad_long_gesture[command->slot]) {
@@ -179,11 +185,17 @@ static void process_commands(MusicBoxAudioEngine *engine)
             music_box_loop_bank_set_trim(&engine->sampler_bank,
                                          engine->selected_sample, true,
                                          command.value);
+            music_box_loop_bank_sync_assignments(&engine->loop_bank,
+                                                 &engine->sampler_bank,
+                                                 engine->selected_sample);
             break;
         case MUSIC_BOX_COMMAND_SET_TRIM_END:
             music_box_loop_bank_set_trim(&engine->sampler_bank,
                                          engine->selected_sample, false,
                                          command.value);
+            music_box_loop_bank_sync_assignments(&engine->loop_bank,
+                                                 &engine->sampler_bank,
+                                                 engine->selected_sample);
             break;
         case MUSIC_BOX_COMMAND_STOP_ALL_LOOPS:
             music_box_loop_bank_stop_all(&engine->loop_bank);

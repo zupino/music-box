@@ -55,6 +55,7 @@ static void test_loop_mode(void)
     assert(selected == 2u);
     assert(music_box_loop_bank_assign(&loops, 0u, &samples, 2u));
     assert(loops.slots[0].state == MUSIC_BOX_LOOP_STOPPED);
+    assert(loops.slots[0].assigned_sample == 2u);
 
     music_box_loop_bank_pad_press(&loops, 0u, &transport);
     assert(loops.slots[0].state == MUSIC_BOX_LOOP_ARMED_PLAY);
@@ -72,6 +73,9 @@ static void test_loop_mode(void)
     music_box_loop_bank_set_trim(&samples, 2u, false, 127u);
     assert(samples.slots[2].trim_start > 0u);
     assert(samples.slots[2].trim_end == samples.slots[2].recorded_frames);
+    music_box_loop_bank_sync_assignments(&loops, &samples, 2u);
+    assert(loops.slots[0].trim_start == samples.slots[2].trim_start);
+    assert(loops.slots[0].trim_end == samples.slots[2].trim_end);
 
     music_box_loop_bank_destroy(&loops);
     music_box_loop_bank_destroy(&samples);
