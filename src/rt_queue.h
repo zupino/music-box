@@ -27,13 +27,25 @@ typedef enum {
     MUSIC_BOX_COMMAND_PAD_HOLD,
     MUSIC_BOX_COMMAND_PAD_RELEASE,
     MUSIC_BOX_COMMAND_SET_TEMPO,
-    MUSIC_BOX_COMMAND_SET_MODE
+    MUSIC_BOX_COMMAND_SET_MODE,
+    MUSIC_BOX_COMMAND_SELECT_LOOP,
+    MUSIC_BOX_COMMAND_SELECT_SAMPLE,
+    MUSIC_BOX_COMMAND_SET_TRIM_START,
+    MUSIC_BOX_COMMAND_SET_TRIM_END,
+    MUSIC_BOX_COMMAND_STOP_ALL_LOOPS
 } MusicBoxCommandType;
+
+typedef enum {
+    MUSIC_BOX_RECORD_MICROPHONE = 0,
+    MUSIC_BOX_RECORD_MONITOR
+} MusicBoxRecordingSource;
 
 typedef struct {
     MusicBoxCommandType type;
     uint8_t slot;
     uint8_t mode;
+    uint8_t value;
+    uint8_t recording_source;
     uint32_t tempo_millibpm;
 } MusicBoxCommand;
 
@@ -51,7 +63,9 @@ typedef enum {
     MUSIC_BOX_EVENT_SLOT_FINISHED,
     MUSIC_BOX_EVENT_TEMPO_CHANGED,
     MUSIC_BOX_EVENT_MODE_CHANGED,
-    MUSIC_BOX_EVENT_BEAT
+    MUSIC_BOX_EVENT_BEAT,
+    MUSIC_BOX_EVENT_LOOP_SELECTED,
+    MUSIC_BOX_EVENT_SAMPLE_SELECTED
 } MusicBoxEventType;
 
 typedef struct {
