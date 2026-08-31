@@ -40,6 +40,7 @@ typedef struct {
     uint64_t blink_at_milliseconds;
     /* Consecutive failed frames; the screen is only given up after several. */
     unsigned int write_failures;
+    bool dirty;
     uint8_t volume_percent;
     bool volume_visible;
     uint32_t volume_hold_milliseconds;

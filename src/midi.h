@@ -31,6 +31,9 @@ typedef struct {
        real-time queue. */
     uint8_t last_control_value[4];
     bool control_value_sent[4];
+    /* K3 is an absolute pot. A burst of adjacent CC values is one physical
+       movement and therefore one monitor-recording toggle. */
+    uint64_t monitor_knob_last_milliseconds;
     MusicBoxMode mode;
 } MusicBoxMidi;
 

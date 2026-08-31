@@ -34,6 +34,21 @@ static void emit_beat_event(MusicBoxAudioEngine *engine)
     (void)music_box_event_queue_push(engine->events, &event);
 }
 
+static void select_completed_monitor_recording(MusicBoxAudioEngine *engine)
+{
+    if (engine->monitor_recording_slot >= MUSIC_BOX_LOOP_COUNT) return;
+    const uint8_t slot = engine->monitor_recording_slot;
+    if (engine->sampler_bank.slots[slot].state == MUSIC_BOX_LOOP_RECORDING) return;
+    engine->monitor_recording_slot = UINT8_MAX;
+    if (engine->sampler_bank.slots[slot].recorded_frames == 0u) return;
+    engine->selected_sample = slot;
+    (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+        .type = MUSIC_BOX_EVENT_SAMPLE_SELECTED,
+        .slot = slot,
+        .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+        .value = slot});
+}
+
 static MusicBoxLoopBank *bank_for_mode(MusicBoxAudioEngine *engine, MusicBoxMode mode)
 {
     return mode == MUSIC_BOX_MODE_SAMPLER ? &engine->sampler_bank : &engine->loop_bank;
@@ -244,6 +259,27 @@ static void process_commands(MusicBoxAudioEngine *engine)
                 }
             }
             break;
+        case MUSIC_BOX_COMMAND_TOGGLE_MONITOR_RECORDING:
+            if (engine->monitor_recording_slot < MUSIC_BOX_LOOP_COUNT) {
+                const uint8_t slot = engine->monitor_recording_slot;
+                (void)music_box_loop_bank_finish_recording(&engine->sampler_bank,
+                                                           slot);
+                select_completed_monitor_recording(engine);
+            } else {
+                const int slot = music_box_loop_bank_start_monitor_recording(
+                    &engine->sampler_bank, &engine->transport);
+                if (slot >= 0) {
+                    engine->recording_source = MUSIC_BOX_RECORD_MONITOR;
+                    engine->monitor_recording_slot = (uint8_t)slot;
+                } else {
+                    (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                        .type = MUSIC_BOX_EVENT_SAMPLE_BANK_FULL,
+                        .slot = 0u,
+                        .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+                        .value = 0u});
+                }
+            }
+            break;
         case MUSIC_BOX_COMMAND_STOP_ALL_LOOPS:
             music_box_loop_bank_stop_all(&engine->loop_bank);
             break;
@@ -298,6 +334,8 @@ static int audio_process(jack_nframes_t frame_count, void *argument)
         output_right[frame] = final_right;
         music_box_transport_advance(&engine->transport);
     }
+    /* The bank also closes a take automatically at max_sample_seconds. */
+    select_completed_monitor_recording(engine);
     return 0;
 }
 
@@ -337,6 +375,7 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
         return false;
     }
     engine->mode = MUSIC_BOX_MODE_PAD;
+    engine->monitor_recording_slot = UINT8_MAX;
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
     if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
         !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,

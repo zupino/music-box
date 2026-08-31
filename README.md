@@ -211,8 +211,13 @@ lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
 `mode_control_enabled=false` pins the box to pad mode.
 
-`quantize` applies to loop mode only. Sampler recording is always unquantized,
-and pad mode records nothing at all.
+`quantize` applies to loop mode only. Sampler and monitor recording are always
+unquantized. In pad mode, move K3 in either direction to start capturing the
+final speaker mix into the first empty sampler slot; pause, then move K3 again
+in either direction to stop. A continuous sweep is one gesture, not many
+toggles. The completed take is selected for K4/K5/K6 trimming and can be
+assigned to a loop like any microphone recording. Music Box refuses to start
+when all sample slots are occupied rather than overwriting a take.
 
 Factory MPD218 presets vary here too. Confirm which controller knob 2 sends
 with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
@@ -266,11 +271,15 @@ initialization failure does not stop the audio engine. Configure it with:
 display_enabled=true
 display_i2c_device=/dev/i2c-1
 display_i2c_address=0x3c
+display_rotate_180=false
 ```
 
 The display shares the I2C bus with the WM8960 but uses a different address.
 Display writes happen outside the JACK callback so I2C traffic cannot block the
 real-time audio thread.
+
+Set `display_rotate_180=true` when the OLED is mounted upside-down. The SSD1306
+controller rotates the complete image, including the pad grid and trim screen.
 
 ### Volume knob
 

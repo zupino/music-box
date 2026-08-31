@@ -35,6 +35,7 @@ int main(void)
     assert(config.trim_start_cc == 14u);
     assert(config.trim_end_cc == 15u);
     assert(config.noise_gate_enabled);
+    assert(!config.display_rotate_180);
 
     /* A configuration written when the looper had four slots still starts, and
        leaves the other twelve pads inert rather than failing to parse. */
@@ -63,6 +64,9 @@ int main(void)
                 &config));
     assert(config.loop_select_cc == 20u && config.loop_panic_cc == 25u);
     assert(config.monitor_modifier_enabled && config.loop_panic_enabled);
+
+    assert(load("display_rotate_180=true\n", &config));
+    assert(config.display_rotate_180);
 
     /* The knob's travel is three zones: loop, sampler, pad. */
     assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 0u, 2u) == MUSIC_BOX_MODE_LOOP);
