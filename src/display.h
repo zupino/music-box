@@ -24,6 +24,9 @@ typedef struct {
     uint32_t tempo_millibpm;
     uint8_t beat;
     MusicBoxMode mode;
+    MusicBoxRecordingSource recording_source;
+    uint8_t selected_loop;
+    uint8_t selected_sample;
     /* Pads with a note assigned; the rest are left blank on the grid. */
     uint16_t mapped_slots;
     uint16_t recording_slots[MUSIC_BOX_MODE_COUNT];
@@ -41,6 +44,11 @@ typedef struct {
     bool volume_visible;
     uint32_t volume_hold_milliseconds;
     uint64_t volume_hide_at_milliseconds;
+    bool trim_visible;
+    uint8_t trim_slot;
+    uint8_t trim_start;
+    uint8_t trim_end;
+    uint64_t trim_hide_at_milliseconds;
     uint8_t pixels[MUSIC_BOX_DISPLAY_BUFFER_SIZE];
 } MusicBoxDisplay;
 

@@ -30,6 +30,14 @@ typedef struct {
     /* Half-width of the dead band around the mode knob's midpoint, in CC
        counts. Smaller means less rotation is needed to change mode. */
     uint8_t mode_cc_hysteresis;
+    uint8_t loop_select_cc;
+    uint8_t sample_select_cc;
+    uint8_t trim_start_cc;
+    uint8_t trim_end_cc;
+    bool monitor_modifier_enabled;
+    uint8_t monitor_modifier_cc;
+    bool loop_panic_enabled;
+    uint8_t loop_panic_cc;
 
     uint32_t tempo_millibpm;
     uint32_t beats_per_bar;
@@ -51,6 +59,11 @@ typedef struct {
     size_t aec_delay_frames;
     float aec_step_size;
     float aec_double_talk_ratio;
+    bool noise_gate_enabled;
+    float noise_gate_threshold;
+    float noise_gate_floor_gain;
+    float noise_gate_attack_ms;
+    float noise_gate_release_ms;
 
     float synth_gain;
     float loop_gain;

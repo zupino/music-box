@@ -1,5 +1,24 @@
 # Development Notes
 
+## 2026-08-31 — Exact-length, beat-anchored assigned loops
+
+The first sample-to-loop implementation deliberately separates phase anchoring
+from loop duration. A track starts on the next shared beat, but then wraps at
+the selected sample's exact trimmed length. A 0.8-second sample therefore
+repeats every 0.8 seconds; it is neither padded nor stretched to the transport.
+
+Later design topics include beat/bar padding, fixed musical lengths,
+time-stretching, transient-aware slicing, wrap crossfades, and whether
+reassignment should snapshot audio or retain a live reference. Time stretching
+will need a Pi 3 CPU budget and must remain allocation-free in the JACK callback.
+
+CTRL BANK and NR CONFIG are controller-local buttons in common MPD218 presets
+and may not produce ALSA events. Their CC mappings are configurable but disabled
+by default. Capture actual events with `aseqdump -p MPD218`; if none appear, an
+editor preset or alternate physical controls will be required.
+
+---
+
 Chronological log of debugging sessions, key findings, and hardware quirks.
 
 ---
