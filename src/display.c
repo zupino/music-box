@@ -408,7 +408,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
        footer bars, so it is not a slot number and skips the slot guard. */
     if (event->type == MUSIC_BOX_EVENT_BEAT) {
         display->beat = event->slot;
-        commit(display);
+        display->dirty = true;
         return;
     }
     if (event->bank >= MUSIC_BOX_MODE_COUNT || event->slot >= MUSIC_BOX_LOOP_COUNT)
@@ -476,6 +476,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         break;
     case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
     case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
+    case MUSIC_BOX_EVENT_SAMPLE_BANK_FULL:
         return;
     case MUSIC_BOX_EVENT_TRIM_CHANGED:
         display->trim_slot = event->slot;
@@ -488,7 +489,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     default:
         return;
     }
-    commit(display);
+    display->dirty = true;
 }
 
 void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent)
@@ -499,7 +500,7 @@ void music_box_display_show_volume(MusicBoxDisplay *display, uint8_t percent)
     display->volume_visible = true;
     display->volume_hide_at_milliseconds =
         monotonic_milliseconds() + display->volume_hold_milliseconds;
-    commit(display);
+    display->dirty = true;
 }
 
 void music_box_display_tick(MusicBoxDisplay *display)
@@ -507,26 +508,31 @@ void music_box_display_tick(MusicBoxDisplay *display)
     if (!display->enabled) return;
     const uint64_t now = monotonic_milliseconds();
     if (display->volume_visible) {
-        if (now < display->volume_hide_at_milliseconds) return;
-        display->volume_visible = false;
-        commit(display);
-        return;
+        if (now >= display->volume_hide_at_milliseconds) {
+            display->volume_visible = false;
+            display->dirty = true;
+        }
     }
     if (display->trim_visible) {
-        if (now < display->trim_hide_at_milliseconds) return;
-        display->trim_visible = false;
-        commit(display);
-        return;
+        if (now >= display->trim_hide_at_milliseconds) {
+            display->trim_visible = false;
+            display->dirty = true;
+        }
     }
     /* Armed and recording cells blink. This is the screen's only self-driven
        cadence and it runs solely while one of them is pending, so an idle
        Music Box still redraws only when something actually happens. */
     const unsigned int mode = (unsigned int)display->mode;
-    if ((display->armed_slots[mode] | display->recording_slots[mode]) == 0u) return;
-    if (now < display->blink_at_milliseconds) return;
-    display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
-    display->blink_on = !display->blink_on;
-    commit(display);
+    if ((display->armed_slots[mode] | display->recording_slots[mode]) != 0u &&
+        now >= display->blink_at_milliseconds) {
+        display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
+        display->blink_on = !display->blink_on;
+        display->dirty = true;
+    }
+    if (display->dirty) {
+        display->dirty = false;
+        commit(display);
+    }
 }
 
 bool music_box_display_active(const MusicBoxDisplay *display)

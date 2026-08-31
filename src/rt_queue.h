@@ -32,6 +32,9 @@ typedef enum {
     MUSIC_BOX_COMMAND_SELECT_SAMPLE,
     MUSIC_BOX_COMMAND_SET_TRIM_START,
     MUSIC_BOX_COMMAND_SET_TRIM_END,
+    /* One deliberate K3 movement in pad mode starts or stops capture of the
+       final speaker mix into the first empty sampler slot. */
+    MUSIC_BOX_COMMAND_TOGGLE_MONITOR_RECORDING,
     MUSIC_BOX_COMMAND_STOP_ALL_LOOPS
 } MusicBoxCommandType;
 
@@ -69,7 +72,8 @@ typedef enum {
     MUSIC_BOX_EVENT_SAMPLE_ASSIGNED,
     MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED,
     MUSIC_BOX_EVENT_SAMPLE_TRIMMED,
-    MUSIC_BOX_EVENT_TRIM_CHANGED
+    MUSIC_BOX_EVENT_TRIM_CHANGED,
+    MUSIC_BOX_EVENT_SAMPLE_BANK_FULL
 } MusicBoxEventType;
 
 typedef struct {

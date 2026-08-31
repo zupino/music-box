@@ -29,6 +29,8 @@ typedef struct {
     uint8_t selected_loop;
     uint8_t selected_sample;
     MusicBoxRecordingSource recording_source;
+    /* UINT8_MAX while K3 monitor capture is idle. */
+    uint8_t monitor_recording_slot;
     /* The bank each pad was pressed on, so a mode change mid-gesture cannot
        route the matching release to the other bank and strand a recording. */
     MusicBoxMode pad_bank[MUSIC_BOX_LOOP_COUNT];
