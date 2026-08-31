@@ -266,11 +266,15 @@ initialization failure does not stop the audio engine. Configure it with:
 display_enabled=true
 display_i2c_device=/dev/i2c-1
 display_i2c_address=0x3c
+display_rotate_180=false
 ```
 
 The display shares the I2C bus with the WM8960 but uses a different address.
 Display writes happen outside the JACK callback so I2C traffic cannot block the
 real-time audio thread.
+
+Set `display_rotate_180=true` when the OLED is mounted upside-down. The SSD1306
+controller rotates the complete image, including the pad grid and trim screen.
 
 ### Volume knob
 

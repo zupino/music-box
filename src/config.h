@@ -46,6 +46,7 @@ typedef struct {
     bool display_enabled;
     uint8_t display_i2c_address;
     char display_i2c_device[MUSIC_BOX_NAME_LENGTH];
+    bool display_rotate_180;
     uint32_t display_volume_seconds;
 
     bool volume_control_enabled;
