@@ -30,9 +30,46 @@ static int loop_slot_for_note(const MusicBoxMidi *midi, unsigned int note)
 
 static void queue_pad_command(MusicBoxMidi *midi, MusicBoxCommandType type, uint8_t slot)
 {
-    const MusicBoxCommand command = {.type = type, .slot = slot, .mode = 0u, .tempo_millibpm = 0u};
+    const MusicBoxCommand command = {.type = type, .slot = slot, .mode = 0u,
+                                     .value = 0u,
+                                     .recording_source = midi->pad_recording_source[slot],
+                                     .tempo_millibpm = 0u};
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; event dropped\n");
+}
+
+static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *event)
+{
+    if (event->type != SND_SEQ_EVENT_CONTROLLER) return false;
+    const unsigned int cc = event->data.control.param;
+    const int raw = event->data.control.value;
+    if (raw < 0 || raw > 127) return false;
+
+    if (midi->config.monitor_modifier_enabled &&
+        cc == (unsigned int)midi->config.monitor_modifier_cc) {
+        midi->monitor_modifier_down = raw >= 64;
+        return true;
+    }
+    MusicBoxCommand command = {.slot = 0u, .mode = 0u, .value = (uint8_t)raw,
+                               .recording_source = 0u, .tempo_millibpm = 0u};
+    if (midi->config.loop_panic_enabled &&
+        cc == (unsigned int)midi->config.loop_panic_cc) {
+        if (raw >= 64) command.type = MUSIC_BOX_COMMAND_STOP_ALL_LOOPS;
+        else return true;
+    } else if (cc == (unsigned int)midi->config.loop_select_cc) {
+        command.type = MUSIC_BOX_COMMAND_SELECT_LOOP;
+    } else if (cc == (unsigned int)midi->config.sample_select_cc) {
+        command.type = MUSIC_BOX_COMMAND_SELECT_SAMPLE;
+    } else if (cc == (unsigned int)midi->config.trim_start_cc) {
+        command.type = MUSIC_BOX_COMMAND_SET_TRIM_START;
+    } else if (cc == (unsigned int)midi->config.trim_end_cc) {
+        command.type = MUSIC_BOX_COMMAND_SET_TRIM_END;
+    } else {
+        return false;
+    }
+    if (!music_box_command_queue_push(midi->commands, &command))
+        fprintf(stderr, "MIDI command queue full; control dropped\n");
+    return true;
 }
 
 /*
@@ -66,6 +103,8 @@ static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *ev
     const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,
                                      .slot = 0u,
                                      .mode = (uint8_t)mode,
+                                     .value = 0u,
+                                     .recording_source = 0u,
                                      .tempo_millibpm = 0u};
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; mode change dropped\n");
@@ -99,6 +138,9 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
             midi->pad_hold_sent[slot] = false;
             midi->pad_press_milliseconds[slot] = monotonic_milliseconds();
             midi->pad_forwarded[slot] = forward;
+            midi->pad_recording_source[slot] = midi->monitor_modifier_down
+                ? (uint8_t)MUSIC_BOX_RECORD_MONITOR
+                : (uint8_t)MUSIC_BOX_RECORD_MICROPHONE;
         } else {
             forward = midi->pad_forwarded[slot];
             midi->pad_forwarded[slot] = false;
@@ -109,6 +151,7 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
         if (!forward) return;
     }
     if (handle_mode_controller(midi, event)) return;
+    if (queue_control_command(midi, event)) return;
     if (handle_volume_controller(midi, event)) return;
     snd_seq_ev_set_source(event, (unsigned char)output_port);
     snd_seq_ev_set_subs(event);
@@ -195,6 +238,7 @@ bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config, Musi
     midi->config = *config;
     midi->commands = commands;
     midi->volume = volume;
+    midi->mode = MUSIC_BOX_MODE_PAD;
     atomic_init(&midi->running, true);
     if (pthread_create(&midi->thread, NULL, midi_thread, midi) != 0) {
         fprintf(stderr, "Cannot create MIDI thread\n");

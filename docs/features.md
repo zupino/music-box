@@ -15,28 +15,26 @@ This page summarises the capabilities currently implemented on the main developm
 
 ### Stereo looper
 
-- sixteen independent stereo loop slots, one per MPD218 pad;
+- sixteen independent stereo loop tracks, one per MPD218 pad;
 - MPD218 notes 52-67 mapped to pads 1-16, bottom-left first;
 - a shorter note list leaves the remaining pads inert, so an older
   four-slot configuration still starts;
-- hold a stopped pad to arm recording;
-- release to arm recording finish;
-- press a playing loop to arm stop;
-- re-recording replaces the selected slot;
-- maximum loop length configured at startup;
-- stereo recording and playback preserved end-to-end.
+- knob 4 selects an existing sampler recording;
+- holding a pad assigns that sample to the corresponding track;
+- tapping an assigned track starts it on the next beat;
+- pressing a playing loop arms its stop;
+- the track repeats at the sample's exact trimmed length.
 
 ### Performance modes
 
 - three modes, loop, sampler and pad, sharing the same sixteen pads;
 - an MPD218 knob selects the mode, a third of its travel each, with a
   configurable dead band that sets how much rotation a change costs;
-- the two recording modes own a separate bank of sixteen stereo slots each, so
-  neither overwrites the other;
+- only sampler mode records; loop mode manages sample assignments;
 - both banks are always mixed, so a running loop survives any mode change;
 - the bank that received a pad press also receives its release, so changing
   mode mid-gesture cannot strand a recording;
-- the mode can be pinned by disabling the knob.
+- disabling the knob leaves the startup mode pinned to pad.
 
 ### Pad mode
 
@@ -61,6 +59,8 @@ This page summarises the capabilities currently implemented on the main developm
 - a tap plays the sample once from its start and stops at its end;
 - a tap during playback restarts the sample;
 - a further hold replaces the sample;
+- recording can use cleaned microphones or the exact speaker-monitor signal;
+- knobs 5 and 6 non-destructively trim the selected sample's head and tail;
 - maximum sample length configured separately from the loop length.
 
 ### Shared transport and quantization
@@ -68,13 +68,12 @@ This page summarises the capabilities currently implemented on the main developm
 - one sample-accurate transport shared by all loop slots;
 - configurable BPM;
 - configurable beats per bar;
-- quantization modes: off, beat, or bar, applied to loop mode;
-- quantized record start;
-- quantized record finish;
+- assigned-loop starts are anchored to the next beat;
+- quantization modes off, beat, or bar apply to loop stops;
 - quantized loop stop, with the loop sounding out its current cycle and shown
   as leaving until the boundary arrives;
 - a second press before the boundary cancels a pending stop;
-- quick press/release before a boundary produces one complete quantization interval;
+- sampler recording remains unquantized;
 - integer/rational timing avoids long-term floating-point drift.
 
 ### Acoustic echo reduction

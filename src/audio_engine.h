@@ -5,6 +5,7 @@
 #include "config.h"
 #include "echo_cancel.h"
 #include "loop_bank.h"
+#include "noise_gate.h"
 #include "rt_queue.h"
 #include "transport.h"
 
@@ -25,10 +26,14 @@ typedef struct {
     MusicBoxLoopBank loop_bank;
     MusicBoxLoopBank sampler_bank;
     MusicBoxMode mode;
+    uint8_t selected_loop;
+    uint8_t selected_sample;
+    MusicBoxRecordingSource recording_source;
     /* The bank each pad was pressed on, so a mode change mid-gesture cannot
        route the matching release to the other bank and strand a recording. */
     MusicBoxMode pad_bank[MUSIC_BOX_LOOP_COUNT];
     MusicBoxEchoCanceller echo_canceller;
+    MusicBoxNoiseGate noise_gate;
     MusicBoxCommandQueue *commands;
     MusicBoxEventQueue *events;
     atomic_bool jack_shutdown;

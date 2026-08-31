@@ -133,17 +133,13 @@ int main(int argc, char **argv)
     printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
            pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
            (unsigned int)config.pad_hold_milliseconds);
-    /* Every buffer is reserved up front, so the total is worth stating: with
-       sixteen pads a generous max_loop_seconds adds up quickly. */
+    /* Sampler buffers are reserved up front; loop tracks reference them. */
     const double megabytes_per_second =
         (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;
-    printf("Mode: %s at startup, reserving %.0f MB for %u loop slots of %u s "
-           "and %u sample slots of %u s\n",
-           music_box_mode_name(MUSIC_BOX_MODE_LOOP),
-           (double)MUSIC_BOX_LOOP_COUNT *
-               (double)(config.max_loop_seconds + config.max_sample_seconds) *
+    printf("Mode: %s at startup, reserving %.0f MB for %u sample slots of %u s\n",
+           music_box_mode_name(MUSIC_BOX_MODE_PAD),
+           (double)MUSIC_BOX_LOOP_COUNT * (double)config.max_sample_seconds *
                megabytes_per_second,
-           (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_loop_seconds,
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
         printf("Mode knob: CC %u selects loop, sampler or pad in thirds, dead band +/-%u\n",

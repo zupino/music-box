@@ -263,11 +263,20 @@ static void draw_status_column(MusicBoxDisplay *display)
     /* With sixteen pads the state has to name the pad it belongs to. */
     char state[16] = "";
     if (display->recording_slots[mode] != 0u)
-        (void)snprintf(state, sizeof(state), "REC %u",
+        (void)snprintf(state, sizeof(state), "%s %u",
+                       display->recording_source == MUSIC_BOX_RECORD_MONITOR
+                           ? "MON" : "MIC",
                        first_slot(display->recording_slots[mode]));
     else if (display->armed_slots[mode] != 0u)
         (void)snprintf(state, sizeof(state), "ARM %u",
                        first_slot(display->armed_slots[mode]));
+    else if (display->mode == MUSIC_BOX_MODE_LOOP)
+        (void)snprintf(state, sizeof(state), "L%u S%u",
+                       (unsigned int)display->selected_loop + 1u,
+                       (unsigned int)display->selected_sample + 1u);
+    else if (display->mode == MUSIC_BOX_MODE_SAMPLER)
+        (void)snprintf(state, sizeof(state), "SAMPLE %u",
+                       (unsigned int)display->selected_sample + 1u);
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
@@ -313,6 +322,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
 {
     memset(display, 0, sizeof(*display));
     display->fd = -1;
+    display->mode = MUSIC_BOX_MODE_PAD;
     display->tempo_millibpm = config->tempo_millibpm;
     display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
     display->blink_on = true;
@@ -390,6 +400,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->blink_on = true;
         break;
     case MUSIC_BOX_EVENT_RECORD_STARTED:
+        display->recording_source = (MusicBoxRecordingSource)event->value;
         display->armed_slots[bank] &= clear;
         display->recording_slots[bank] |= bit;
         /* The previous take is gone as soon as the new one starts. */
@@ -428,6 +439,12 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         display->tempo_millibpm = (uint32_t)event->value;
+        break;
+    case MUSIC_BOX_EVENT_LOOP_SELECTED:
+        display->selected_loop = event->slot;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_SELECTED:
+        display->selected_sample = event->slot;
         break;
     default:
         return;

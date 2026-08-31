@@ -24,6 +24,9 @@ typedef struct {
     uint32_t tempo_millibpm;
     uint8_t beat;
     MusicBoxMode mode;
+    MusicBoxRecordingSource recording_source;
+    uint8_t selected_loop;
+    uint8_t selected_sample;
     /* Pads with a note assigned; the rest are left blank on the grid. */
     uint16_t mapped_slots;
     uint16_t recording_slots[MUSIC_BOX_MODE_COUNT];

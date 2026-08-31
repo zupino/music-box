@@ -111,7 +111,7 @@ end note
 | `midi.c` | ALSA sequencer ports, MPD discovery and MIDI forwarding |
 | `audio_engine.c` | JACK callback, signal routing, mode routing and final mixer |
 | `transport.c` | Drift-free sample/beat/bar clock |
-| `loop_bank.c` | One bank of sixteen stereo buffers, their slot state machines and, for the sampler, a pre-roll ring; instantiated twice, once per mode |
+| `loop_bank.c` | Sixteen sampler buffers, non-destructive trim ranges, and sixteen loop-track state machines referencing assigned samples |
 | `echo_cancel.c` | Built-in two-reference/two-microphone NLMS AEC |
 | `rt_queue.c` | Lock-free SPSC command and status queues |
 | `volume.c` | ALSA simple-mixer hardware output volume driven by a MIDI knob |
@@ -152,7 +152,7 @@ The JACK callback is the only code allowed to mutate transport, slot buffers, sl
 | Processor | Stereo mixer | Sums synth, loop and sample playback |
 | Processor | Output gain/clip | Produces the exact samples sent to the codec |
 | Internal sink/source | AEC reference delay | Stores speaker-bound samples for later echo estimation |
-| Sink | Loop buffers | Sixteen stereo recordings held in memory |
+| Sink | Loop tracks | Sixteen sample assignments with independent playback state |
 | Sink | Sample buffers | Sixteen further stereo recordings held in memory |
 | Sink | `system:playback_1` | WM8960 left playback channel |
 | Sink | `system:playback_2` | WM8960 right playback channel |

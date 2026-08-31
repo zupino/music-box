@@ -24,6 +24,8 @@ typedef struct {
     /* Pads whose Note On went to the synthesizer, so the matching Note Off
        follows it even if the mode knob moves while the pad is down. */
     bool pad_forwarded[MUSIC_BOX_LOOP_COUNT];
+    uint8_t pad_recording_source[MUSIC_BOX_LOOP_COUNT];
+    bool monitor_modifier_down;
     MusicBoxMode mode;
 } MusicBoxMidi;
 
