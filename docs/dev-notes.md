@@ -1,5 +1,24 @@
 # Development Notes
 
+## 2026-08-31 — Exact-length, beat-anchored assigned loops
+
+The first sample-to-loop implementation deliberately separates phase anchoring
+from loop duration. A track starts on the next shared beat, but then wraps at
+the selected sample's exact trimmed length. A 0.8-second sample therefore
+repeats every 0.8 seconds; it is neither padded nor stretched to the transport.
+
+Later design topics include beat/bar padding, fixed musical lengths,
+time-stretching, transient-aware slicing, wrap crossfades, and whether
+reassignment should snapshot audio or retain a live reference. Time stretching
+will need a Pi 3 CPU budget and must remain allocation-free in the JACK callback.
+
+CTRL BANK and NR CONFIG are controller-local buttons in common MPD218 presets
+and may not produce ALSA events. Their CC mappings are configurable but disabled
+by default. Capture actual events with `aseqdump -p MPD218`; if none appear, an
+editor preset or alternate physical controls will be required.
+
+---
+
 Chronological log of debugging sessions, key findings, and hardware quirks.
 
 ---
@@ -498,7 +517,7 @@ than the current `max_sample_seconds`.
 Four items reported after the first build was tried on the box.
 
 **All sixteen pads, not four.** `MUSIC_BOX_LOOP_COUNT` is now 16 and
-`loop_notes` defaults to the full bank B, notes 52-67, listed bottom-left first
+`loop_notes` defaults to the full bank B, notes 52-67, listed in printed pad order
 so slot order matches the physical grid. `parse_loop_notes` now accepts one to
 sixteen notes instead of demanding exactly the slot count, and fills the rest
 with `MUSIC_BOX_NOTE_UNMAPPED`. That matters more than it looks: without it,
@@ -547,8 +566,8 @@ sample while another is held to record would have poisoned that pad's head too.
 ### Display: stop stacking, start aligning
 Four numbered boxes became a 4x4 grid, which leaves no room for a digit. That is
 fine, and arguably better: the grid has the same shape as the controller, so
-position identifies the pad. Slot 0 is drawn bottom-left, matching how the
-MPD218 labels its pads and the order the notes are listed in.
+position identifies the pad. Slot 0 is now drawn top-left, matching the printed
+PAD 1 position; the factory preset's MIDI note rows run in the opposite order.
 
 The first attempt stacked the grid under a full-width header, and it was too
 tight: header, four cell rows and a footer do not fit in 32 rows with any room

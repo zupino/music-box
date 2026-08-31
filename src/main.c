@@ -66,7 +66,25 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_MODE_CHANGED:
         printf("Mode: %s\n", music_box_mode_name((MusicBoxMode)event->value));
         break;
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGNED:
+        printf("Loop %u: assigned sample %llu\n", slot,
+               (unsigned long long)event->value + 1u);
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
+        printf("Loop %u: sample %llu assignment failed (sample is empty)\n",
+               slot, (unsigned long long)event->value + 1u);
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
+        printf("Sample %u: trim %llu..%llu frames\n", slot,
+               (unsigned long long)(event->value >> 32u),
+               (unsigned long long)(event->value & UINT32_MAX));
+        break;
     case MUSIC_BOX_EVENT_BEAT:
+        break;
+    case MUSIC_BOX_EVENT_TRIM_CHANGED:
+        printf("Sample %u: trim %u%%-%u%%\n", slot,
+               (unsigned int)((event->value & 0xffu) * 100u / 127u),
+               (unsigned int)(((event->value >> 8u) & 0xffu) * 100u / 127u));
         break;
     default:
         break;
@@ -133,17 +151,13 @@ int main(int argc, char **argv)
     printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
            pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
            (unsigned int)config.pad_hold_milliseconds);
-    /* Every buffer is reserved up front, so the total is worth stating: with
-       sixteen pads a generous max_loop_seconds adds up quickly. */
+    /* Sampler buffers are reserved up front; loop tracks reference them. */
     const double megabytes_per_second =
         (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;
-    printf("Mode: %s at startup, reserving %.0f MB for %u loop slots of %u s "
-           "and %u sample slots of %u s\n",
-           music_box_mode_name(MUSIC_BOX_MODE_LOOP),
-           (double)MUSIC_BOX_LOOP_COUNT *
-               (double)(config.max_loop_seconds + config.max_sample_seconds) *
+    printf("Mode: %s at startup, reserving %.0f MB for %u sample slots of %u s\n",
+           music_box_mode_name(MUSIC_BOX_MODE_PAD),
+           (double)MUSIC_BOX_LOOP_COUNT * (double)config.max_sample_seconds *
                megabytes_per_second,
-           (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_loop_seconds,
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
         printf("Mode knob: CC %u selects loop, sampler or pad in thirds, dead band +/-%u\n",
@@ -169,9 +183,26 @@ int main(int argc, char **argv)
         if (route_counter == 0u) music_box_audio_engine_connect_ports(&engine);
         route_counter = (route_counter + 1u) % 10u;
         MusicBoxEvent event;
+        MusicBoxEvent latest_trim;
+        bool have_trim = false;
         while (music_box_event_queue_pop(&events, &event)) {
+            /* An OLED write per CC step turns a quick knob sweep into seconds
+               of stale animation. Keep only the newest trim position from
+               each 100 ms main-loop interval, just as volume is coalesced. */
+            if (event.type == MUSIC_BOX_EVENT_TRIM_CHANGED ||
+                event.type == MUSIC_BOX_EVENT_SAMPLE_TRIMMED) {
+                if (event.type == MUSIC_BOX_EVENT_TRIM_CHANGED) {
+                    latest_trim = event;
+                    have_trim = true;
+                }
+                continue;
+            }
             print_event(&event, music_box_audio_engine_sample_rate(&engine));
             music_box_display_handle_event(&display, &event);
+        }
+        if (have_trim) {
+            print_event(&latest_trim, music_box_audio_engine_sample_rate(&engine));
+            music_box_display_handle_event(&display, &latest_trim);
         }
         /* Knob moves are coalesced here so one screen redraw covers a sweep. */
         const uint32_t generation = music_box_volume_generation(&volume);
