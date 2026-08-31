@@ -82,6 +82,11 @@ if [ ! -e /etc/music-box/music-box.conf ]; then
     install -m 0644 "$ROOT_DIR/config/music-box.conf" /etc/music-box/music-box.conf
 else
     echo "Keeping existing /etc/music-box/music-box.conf"
+    # Correct the original shipped MPD218 bank-B ordering. Preserve every
+    # custom mapping; only the exact old default is migrated in place.
+    sed -i \
+        's/^loop_notes=52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67$/loop_notes=64,65,66,67,60,61,62,63,56,57,58,59,52,53,54,55/' \
+        /etc/music-box/music-box.conf
 fi
 
 if [ -n "$SOUNDFONT_PATH" ]; then

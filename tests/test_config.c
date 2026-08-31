@@ -24,11 +24,17 @@ int main(void)
 {
     MusicBoxConfig config;
 
-    /* All sixteen MPD218 pads are mapped out of the box, bottom-left first. */
+    /* Slot order follows the printed PAD 1..16 labels, not ascending notes. */
     music_box_config_defaults(&config);
     assert(music_box_config_mapped_pads(&config) == MUSIC_BOX_LOOP_COUNT);
-    assert(config.loop_notes[0] == 52u);
-    assert(config.loop_notes[MUSIC_BOX_LOOP_COUNT - 1u] == 67u);
+    assert(config.loop_notes[0] == 64u);
+    assert(config.loop_notes[3] == 67u);
+    assert(config.loop_notes[MUSIC_BOX_LOOP_COUNT - 1u] == 55u);
+    assert(config.loop_select_cc == 12u);
+    assert(config.sample_select_cc == 13u);
+    assert(config.trim_start_cc == 14u);
+    assert(config.trim_end_cc == 15u);
+    assert(config.noise_gate_enabled);
 
     /* A configuration written when the looper had four slots still starts, and
        leaves the other twelve pads inert rather than failing to parse. */
@@ -49,6 +55,14 @@ int main(void)
     assert(config.mode_cc_hysteresis == 0u);
     /* Wider than half a zone would make the middle mode unreachable. */
     assert(!load("mode_cc_hysteresis=17\n", &config));
+
+    assert(load("loop_select_cc=20\nsample_select_cc=21\ntrim_start_cc=22\n"
+                "trim_end_cc=23\nmonitor_modifier_enabled=true\n"
+                "monitor_modifier_cc=24\nloop_panic_enabled=true\nloop_panic_cc=25\n"
+                "noise_gate_threshold=0.02\nnoise_gate_floor_gain=0.2\n",
+                &config));
+    assert(config.loop_select_cc == 20u && config.loop_panic_cc == 25u);
+    assert(config.monitor_modifier_enabled && config.loop_panic_enabled);
 
     /* The knob's travel is three zones: loop, sampler, pad. */
     assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 0u, 2u) == MUSIC_BOX_MODE_LOOP);

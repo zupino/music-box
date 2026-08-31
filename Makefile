@@ -14,6 +14,7 @@ SOURCES = \
 	src/transport.c \
 	src/loop_bank.c \
 	src/echo_cancel.c \
+	src/noise_gate.c \
 	src/audio_engine.c \
 	src/midi.c \
 	src/display.c \
@@ -26,6 +27,7 @@ TEST_BINS = \
 	build/test_loop_bank \
 	build/test_config \
 	build/test_echo_cancel \
+	build/test_noise_gate \
 	build/test_volume
 
 .PHONY: all clean install test
@@ -54,6 +56,9 @@ build/test_config: tests/test_config.c src/config.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
 
 build/test_echo_cancel: tests/test_echo_cancel.c src/echo_cancel.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lm
+
+build/test_noise_gate: tests/test_noise_gate.c src/noise_gate.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lm
 
 build/test_volume: tests/test_volume.c src/volume.c | build

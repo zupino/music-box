@@ -263,11 +263,19 @@ static void draw_status_column(MusicBoxDisplay *display)
     /* With sixteen pads the state has to name the pad it belongs to. */
     char state[16] = "";
     if (display->recording_slots[mode] != 0u)
-        (void)snprintf(state, sizeof(state), "REC %u",
+        (void)snprintf(state, sizeof(state), "%s %u",
+                       display->recording_source == MUSIC_BOX_RECORD_MONITOR
+                           ? "MON" : "MIC",
                        first_slot(display->recording_slots[mode]));
     else if (display->armed_slots[mode] != 0u)
         (void)snprintf(state, sizeof(state), "ARM %u",
                        first_slot(display->armed_slots[mode]));
+    else if (display->mode == MUSIC_BOX_MODE_LOOP)
+        (void)snprintf(state, sizeof(state), "S%u",
+                       (unsigned int)display->selected_sample + 1u);
+    /* In sampler mode the pressed pad is the recording/playback slot. K4 only
+       chooses which stored sample K5/K6 edit, so it must not look like the
+       active pad changed. */
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
@@ -276,6 +284,24 @@ static void draw_status_screen(MusicBoxDisplay *display)
 {
     draw_pad_grid(display);
     draw_status_column(display);
+}
+
+static void draw_trim_screen(MusicBoxDisplay *display)
+{
+    char title[16];
+    (void)snprintf(title, sizeof(title), "TRIM S%u",
+                   (unsigned int)display->trim_slot + 1u);
+    draw_text(display, 2u, 0u, title);
+
+    const unsigned int x = 2u;
+    const unsigned int y = 17u;
+    const unsigned int width = MUSIC_BOX_DISPLAY_WIDTH - 4u;
+    draw_rectangle(display, x, y, width, 11u);
+    const unsigned int inner = width - 4u;
+    const unsigned int start = (inner * display->trim_start) / 127u;
+    const unsigned int end = (inner * display->trim_end) / 127u;
+    if (end > start)
+        fill_rectangle(display, x + 2u + start, y + 2u, end - start, 7u);
 }
 
 /* Shares the pad grid's margins and stops short of the beat rail. */
@@ -299,6 +325,7 @@ static bool refresh(MusicBoxDisplay *display)
     if (!display->enabled) return true;
     memset(display->pixels, 0, sizeof(display->pixels));
     if (display->volume_visible) draw_volume_screen(display);
+    else if (display->trim_visible) draw_trim_screen(display);
     else draw_status_screen(display);
     draw_beat_rail(display);
 
@@ -313,6 +340,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
 {
     memset(display, 0, sizeof(*display));
     display->fd = -1;
+    display->mode = MUSIC_BOX_MODE_PAD;
     display->tempo_millibpm = config->tempo_millibpm;
     display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
     display->blink_on = true;
@@ -354,6 +382,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
  * when it only showed a beat.
  */
 #define DISPLAY_WRITE_FAILURE_LIMIT 5u
+#define TRIM_HOLD_MILLISECONDS 1500u
 
 static void commit(MusicBoxDisplay *display)
 {
@@ -390,6 +419,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->blink_on = true;
         break;
     case MUSIC_BOX_EVENT_RECORD_STARTED:
+        display->recording_source = (MusicBoxRecordingSource)event->value;
         display->armed_slots[bank] &= clear;
         display->recording_slots[bank] |= bit;
         /* The previous take is gone as soon as the new one starts. */
@@ -429,6 +459,28 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         display->tempo_millibpm = (uint32_t)event->value;
         break;
+    case MUSIC_BOX_EVENT_LOOP_SELECTED:
+        display->selected_loop = event->slot;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_SELECTED:
+        display->selected_sample = event->slot;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGNED:
+        display->loaded_slots[MUSIC_BOX_MODE_LOOP] |= bit;
+        display->playing_slots[MUSIC_BOX_MODE_LOOP] &= clear;
+        display->pending_stop_slots[MUSIC_BOX_MODE_LOOP] &= clear;
+        break;
+    case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
+    case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
+        return;
+    case MUSIC_BOX_EVENT_TRIM_CHANGED:
+        display->trim_slot = event->slot;
+        display->trim_start = (uint8_t)(event->value & 0xffu);
+        display->trim_end = (uint8_t)((event->value >> 8u) & 0xffu);
+        display->trim_visible = true;
+        display->trim_hide_at_milliseconds =
+            monotonic_milliseconds() + TRIM_HOLD_MILLISECONDS;
+        break;
     default:
         return;
     }
@@ -453,6 +505,12 @@ void music_box_display_tick(MusicBoxDisplay *display)
     if (display->volume_visible) {
         if (now < display->volume_hide_at_milliseconds) return;
         display->volume_visible = false;
+        commit(display);
+        return;
+    }
+    if (display->trim_visible) {
+        if (now < display->trim_hide_at_milliseconds) return;
+        display->trim_visible = false;
         commit(display);
         return;
     }
