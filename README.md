@@ -81,9 +81,10 @@ note 52 and pad 16 is note 67. The display uses the same arrangement.
 
 ### Loop mode
 
-Loop mode manages tracks; it never records the microphones. Knob 3 selects a
-track for display, knob 4 selects a recorded sample, and holding a track's pad
-assigns the selected sample to it. A short press starts or stops that track.
+Loop mode manages tracks; it never records the microphones. Knob 3 selects the
+track to edit, knob 4 selects among recorded samples only, and holding any loop
+pad assigns the selected sample to the K3-selected track. A short press still
+starts or stops the track corresponding to that pad.
 Starts wait for the next beat, then the trimmed sample repeats at its exact
 length. Stops continue to use the configured `quantize` boundary.
 

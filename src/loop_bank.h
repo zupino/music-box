@@ -107,6 +107,12 @@ void music_box_loop_bank_record_sample(MusicBoxLoopBank *bank,
                                        float right);
 bool music_box_loop_bank_assign(MusicBoxLoopBank *loops, uint8_t loop_slot,
                                 const MusicBoxLoopBank *samples, uint8_t sample_slot);
+/* Maps one of `division_count` knob positions across recorded samples only.
+   Returns false when the bank has no usable recording. */
+bool music_box_loop_bank_select_recorded(const MusicBoxLoopBank *bank,
+                                         uint8_t position,
+                                         uint8_t division_count,
+                                         uint8_t *slot);
 void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank);
 void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot,
                                   bool start, uint8_t controller_value);

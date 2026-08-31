@@ -472,6 +472,41 @@ bool music_box_loop_bank_assign(MusicBoxLoopBank *loops, uint8_t loop_slot,
     return true;
 }
 
+bool music_box_loop_bank_select_recorded(const MusicBoxLoopBank *bank,
+                                         uint8_t position,
+                                         uint8_t division_count,
+                                         uint8_t *slot)
+{
+    if (bank == NULL || slot == NULL || division_count == 0u ||
+        position >= division_count)
+        return false;
+
+    uint8_t recorded_count = 0u;
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        const MusicBoxLoopSlot *candidate = &bank->slots[index];
+        if (candidate->recorded_frames > 0u &&
+            candidate->trim_end > candidate->trim_start)
+            recorded_count++;
+    }
+    if (recorded_count == 0u) return false;
+
+    const uint8_t wanted = (uint8_t)(((unsigned int)position * recorded_count) /
+                                     division_count);
+    uint8_t ordinal = 0u;
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        const MusicBoxLoopSlot *candidate = &bank->slots[index];
+        if (candidate->recorded_frames == 0u ||
+            candidate->trim_end <= candidate->trim_start)
+            continue;
+        if (ordinal == wanted) {
+            *slot = index;
+            return true;
+        }
+        ordinal++;
+    }
+    return false;
+}
+
 void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank)
 {
     for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
