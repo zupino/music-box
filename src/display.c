@@ -287,6 +287,24 @@ static void draw_status_screen(MusicBoxDisplay *display)
     draw_status_column(display);
 }
 
+static void draw_trim_screen(MusicBoxDisplay *display)
+{
+    char title[16];
+    (void)snprintf(title, sizeof(title), "TRIM S%u",
+                   (unsigned int)display->trim_slot + 1u);
+    draw_text(display, 2u, 0u, title);
+
+    const unsigned int x = 2u;
+    const unsigned int y = 17u;
+    const unsigned int width = MUSIC_BOX_DISPLAY_WIDTH - 4u;
+    draw_rectangle(display, x, y, width, 11u);
+    const unsigned int inner = width - 4u;
+    const unsigned int start = (inner * display->trim_start) / 127u;
+    const unsigned int end = (inner * display->trim_end) / 127u;
+    if (end > start)
+        fill_rectangle(display, x + 2u + start, y + 2u, end - start, 7u);
+}
+
 /* Shares the pad grid's margins and stops short of the beat rail. */
 #define VOLUME_BAR_WIDTH (CONTENT_RIGHT_X - PAD_ORIGIN_X)
 #define VOLUME_FILL_WIDTH (VOLUME_BAR_WIDTH - 4u)
@@ -308,6 +326,7 @@ static bool refresh(MusicBoxDisplay *display)
     if (!display->enabled) return true;
     memset(display->pixels, 0, sizeof(display->pixels));
     if (display->volume_visible) draw_volume_screen(display);
+    else if (display->trim_visible) draw_trim_screen(display);
     else draw_status_screen(display);
     draw_beat_rail(display);
 
@@ -364,6 +383,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
  * when it only showed a beat.
  */
 #define DISPLAY_WRITE_FAILURE_LIMIT 5u
+#define TRIM_HOLD_MILLISECONDS 1500u
 
 static void commit(MusicBoxDisplay *display)
 {
@@ -454,6 +474,14 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
     case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
         break;
+    case MUSIC_BOX_EVENT_TRIM_CHANGED:
+        display->trim_slot = event->slot;
+        display->trim_start = (uint8_t)(event->value & 0xffu);
+        display->trim_end = (uint8_t)((event->value >> 8u) & 0xffu);
+        display->trim_visible = true;
+        display->trim_hide_at_milliseconds =
+            monotonic_milliseconds() + TRIM_HOLD_MILLISECONDS;
+        break;
     default:
         return;
     }
@@ -478,6 +506,12 @@ void music_box_display_tick(MusicBoxDisplay *display)
     if (display->volume_visible) {
         if (now < display->volume_hide_at_milliseconds) return;
         display->volume_visible = false;
+        commit(display);
+        return;
+    }
+    if (display->trim_visible) {
+        if (now < display->trim_hide_at_milliseconds) return;
+        display->trim_visible = false;
         commit(display);
         return;
     }

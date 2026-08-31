@@ -99,6 +99,8 @@ static void test_recorded_sample_selection(void)
     assert(selected == 11u);
     assert(music_box_loop_bank_select_recorded(&samples, 15u, 16u, &selected));
     assert(selected == 11u);
+    assert(music_box_loop_bank_select_recorded(&samples, 127u, 128u, &selected));
+    assert(selected == 11u);
 }
 
 /*

@@ -63,7 +63,10 @@ static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *eve
         editor = 0u;
     } else if (cc == (unsigned int)midi->config.sample_select_cc) {
         command.type = MUSIC_BOX_COMMAND_SELECT_SAMPLE;
-        command.value = (uint8_t)(((unsigned int)raw * MUSIC_BOX_LOOP_COUNT) / 128u);
+        /* Keep the full absolute knob position. The audio engine knows which
+           sampler slots are actually populated and maps this across that
+           sparse set. Pre-quantising here made physical slot numbers leak into
+           the selection and could display S13 for a recording on pad 1. */
         editor = 1u;
     } else if (cc == (unsigned int)midi->config.trim_start_cc) {
         command.type = MUSIC_BOX_COMMAND_SET_TRIM_START;

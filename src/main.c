@@ -81,6 +81,11 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
         break;
     case MUSIC_BOX_EVENT_BEAT:
         break;
+    case MUSIC_BOX_EVENT_TRIM_CHANGED:
+        printf("Sample %u: trim %u%%-%u%%\n", slot,
+               (unsigned int)((event->value & 0xffu) * 100u / 127u),
+               (unsigned int)(((event->value >> 8u) & 0xffu) * 100u / 127u));
+        break;
     default:
         break;
     }

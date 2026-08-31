@@ -81,15 +81,15 @@ note 52 and pad 16 is note 67. The display uses the same arrangement.
 
 ### Loop mode
 
-Loop mode manages tracks; it never records the microphones. Knob 3 selects the
-track to edit, knob 4 selects among recorded samples only, and holding any loop
-pad assigns the selected sample to the K3-selected track. A short press still
-starts or stops the track corresponding to that pad.
+Loop mode manages tracks; it never records the microphones. Knob 4 selects
+among recorded samples only. Holding a pad assigns the selected sample to that
+pad's loop track: holding pad 2 assigns it to loop 2. A short press starts or
+stops the same track. K3 is no longer needed for assignment.
 Starts wait for the next beat, then the trimmed sample repeats at its exact
 length. Stops continue to use the configured `quantize` boundary.
 
 1. Turn knob 4 to select a recorded sample.
-2. Hold a loop pad to assign that sample to the track.
+2. Hold a loop pad to assign that sample to the corresponding track.
 3. Tap the pad: playback starts at the next beat.
 4. Press a playing pad: stop is armed for the configured boundary. The loop keeps sounding
    out the current cycle, and the display hatches its cell to show it is on the
@@ -105,7 +105,8 @@ quantized: a sample lasts exactly as long as its pad was held.
 
 The pad itself always chooses the recording/playback slot. Knob 4 only chooses
 the existing sample edited by the trim knobs: K5 moves its start and K6 moves
-its end. The sampler screen therefore does not present K4 as the active slot.
+its end. While either trim knob moves, the OLED shows the whole sample as an
+outlined horizontal bar and its retained range as a filled section.
 
 1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
    from the moment of the press, with no wait for a beat or bar.

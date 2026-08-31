@@ -100,12 +100,12 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
         if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) {
             engine->pad_long_gesture[command->slot] = true;
             if (!music_box_loop_bank_assign(&engine->loop_bank,
-                                            engine->selected_loop,
+                                            command->slot,
                                             &engine->sampler_bank,
                                             engine->selected_sample)) {
                 (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
                     .type = MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED,
-                    .slot = engine->selected_loop,
+                    .slot = command->slot,
                     .bank = (uint8_t)MUSIC_BOX_MODE_LOOP,
                     .value = engine->selected_sample});
             }
@@ -169,7 +169,7 @@ static void process_commands(MusicBoxAudioEngine *engine)
             uint8_t recorded_sample = 0u;
             if (!music_box_loop_bank_select_recorded(&engine->sampler_bank,
                                                       command.value,
-                                                      MUSIC_BOX_LOOP_COUNT,
+                                                      128u,
                                                       &recorded_sample))
                 break;
             if (recorded_sample == engine->selected_sample) break;
@@ -188,6 +188,21 @@ static void process_commands(MusicBoxAudioEngine *engine)
             music_box_loop_bank_sync_assignments(&engine->loop_bank,
                                                  &engine->sampler_bank,
                                                  engine->selected_sample);
+            {
+                const MusicBoxLoopSlot *slot =
+                    &engine->sampler_bank.slots[engine->selected_sample];
+                if (slot->recorded_frames > 0u) {
+                    const uint64_t start = (127u * slot->trim_start) /
+                                           slot->recorded_frames;
+                    const uint64_t end = (127u * slot->trim_end) /
+                                         slot->recorded_frames;
+                    (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                        .type = MUSIC_BOX_EVENT_TRIM_CHANGED,
+                        .slot = engine->selected_sample,
+                        .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+                        .value = start | (end << 8u)});
+                }
+            }
             break;
         case MUSIC_BOX_COMMAND_SET_TRIM_END:
             music_box_loop_bank_set_trim(&engine->sampler_bank,
@@ -196,6 +211,21 @@ static void process_commands(MusicBoxAudioEngine *engine)
             music_box_loop_bank_sync_assignments(&engine->loop_bank,
                                                  &engine->sampler_bank,
                                                  engine->selected_sample);
+            {
+                const MusicBoxLoopSlot *slot =
+                    &engine->sampler_bank.slots[engine->selected_sample];
+                if (slot->recorded_frames > 0u) {
+                    const uint64_t start = (127u * slot->trim_start) /
+                                           slot->recorded_frames;
+                    const uint64_t end = (127u * slot->trim_end) /
+                                         slot->recorded_frames;
+                    (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                        .type = MUSIC_BOX_EVENT_TRIM_CHANGED,
+                        .slot = engine->selected_sample,
+                        .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+                        .value = start | (end << 8u)});
+                }
+            }
             break;
         case MUSIC_BOX_COMMAND_STOP_ALL_LOOPS:
             music_box_loop_bank_stop_all(&engine->loop_bank);
