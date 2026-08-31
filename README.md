@@ -27,11 +27,13 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 
 - stereo recording from both WM8960 microphones;
 - sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
-- hold to record, release to finish, press a playing loop to stop it;
+- sampler-only recording from either cleaned microphones or the speaker monitor;
+- sample assignment to loop tracks, with beat-anchored starts;
 - three performance modes on the same pads: loop, sampler and pad;
 - sampler mode gives each pad a one-shot recording of its own;
 - pad mode plays the FluidSynth SoundFont straight from the sixteen pads;
 - knob 2 switches mode without silencing anything already playing;
+- knobs 3-6 select tracks and samples and trim sample heads and tails;
 - non-loop MIDI forwarded to FluidSynth;
 - sample-accurate shared beat/bar transport;
 - beat- or bar-quantized record start, finish and stop;
@@ -63,7 +65,7 @@ FluidSynth JACK L/R -----------+
 Loop and sample playback L/R --+--> Music Box mixer --> WM8960 speakers
                                |          |
                                |          `--> exact AEC reference
-WM8960 microphones --> AEC ----+--> quantized loop recorder
+WM8960 microphones --> AEC ----+--> unquantized sampler recorder
 ```
 
 FluidSynth is routed through Music Box rather than directly to the physical playback ports so AEC sees the exact loudspeaker signal.
@@ -79,22 +81,31 @@ note 52 and pad 16 is note 67. The display uses the same arrangement.
 
 ### Loop mode
 
-The default. With `quantize=bar`:
+Loop mode manages tracks; it never records the microphones. Knob 3 selects the
+track to edit, knob 4 selects among recorded samples only, and holding any loop
+pad assigns the selected sample to the K3-selected track. A short press still
+starts or stops the track corresponding to that pad.
+Starts wait for the next beat, then the trimmed sample repeats at its exact
+length. Stops continue to use the configured `quantize` boundary.
 
-1. Hold a stopped pad: recording is armed.
-2. Recording starts at the next common bar boundary.
-3. Release: finish is armed.
-4. Recording closes at the next bar and begins looping.
-5. Press a playing pad: stop is armed for the next bar. The loop keeps sounding
+1. Turn knob 4 to select a recorded sample.
+2. Hold a loop pad to assign that sample to the track.
+3. Tap the pad: playback starts at the next beat.
+4. Press a playing pad: stop is armed for the configured boundary. The loop keeps sounding
    out the current cycle, and the display hatches its cell to show it is on the
    way out. Pressing again before the boundary cancels the stop.
 
-A quick press/release before recording starts creates one complete quantization interval. This often leaves the physical pad tap before the recorded material; dedicated tap-noise filtering remains deferred.
+The application starts in pad mode, so startup never turns a parked mode knob
+into an unexpected recording or loop-control gesture.
 
 ### Sampler mode
 
 Every pad is a one-shot recorder. Nothing repeats on its own, and nothing is
 quantized: a sample lasts exactly as long as its pad was held.
+
+The pad itself always chooses the recording/playback slot. Knob 4 only chooses
+the existing sample edited by the trim knobs: K5 moves its start and K6 moves
+its end. The sampler screen therefore does not present K4 as the active slot.
 
 1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
    from the moment of the press, with no wait for a beat or bar.
@@ -128,14 +139,14 @@ how you play over what you have already recorded. A Note Off always follows its
 own Note On, so turning the knob while a pad is down cannot leave a note hanging
 on the synthesizer.
 
-Both looper modes own separate banks of sixteen slots, so a sample never
-overwrites a loop. Loops recorded in loop mode keep playing while sampler pads are used, and
+Sampler audio and assigned loop-track state are separate, so assignment does
+not overwrite a sample. Assigned loops keep playing while sampler pads are used, and
 samples keep playing after a switch back. That also means a sampler recording
 captures any loop still running through the microphones unless the loops are
 stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
-it is moved, so a freshly started service is always in loop mode regardless of
+it is moved, so a freshly started service is always in pad mode regardless of
 where the knob is parked. Its travel splits into three zones with a switch at
 each boundary:
 
@@ -187,16 +198,15 @@ pad_hold_milliseconds=400
 mode_cc_hysteresis=2
 ```
 
-`max_sample_seconds` allocates sixteen more stereo buffers of that length at
-startup, on top of the sixteen `max_loop_seconds` loop buffers. Every buffer is
-reserved whether or not it is ever used, because the audio callback cannot
-allocate, so the total is `16 x (max_loop_seconds + max_sample_seconds) x
-384 kB` at 48 kHz — about 246 MB with the shipped values. The startup banner
-prints the figure. `pad_hold_milliseconds` is the line between
+`max_sample_seconds` allocates sixteen stereo buffers of that length at startup.
+Loop tracks reference assigned sample storage, so they do not duplicate it.
+The total is `16 x max_sample_seconds x 384 kB` at 48 kHz — about 61 MB with
+the shipped value. The startup banner prints the figure.
+`pad_hold_milliseconds` is the line between
 triggering a sample and recording a new one, and it also sizes the pre-roll, so
 lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
-`mode_control_enabled=false` pins the box to loop mode.
+`mode_control_enabled=false` pins the box to pad mode.
 
 `quantize` applies to loop mode only. Sampler recording is always unquantized,
 and pad mode records nothing at all.
@@ -330,7 +340,8 @@ make
 make test
 ```
 
-The unit suite covers transport boundaries, lock-free queues, quantized loop and sampler states, and synthetic AEC convergence.
+The unit suite covers transport boundaries, lock-free queues, assigned-loop and
+sampler states, microphone gating, and synthetic AEC convergence.
 
 ## Development notes
 
