@@ -32,6 +32,7 @@ typedef struct {
     /* The bank each pad was pressed on, so a mode change mid-gesture cannot
        route the matching release to the other bank and strand a recording. */
     MusicBoxMode pad_bank[MUSIC_BOX_LOOP_COUNT];
+    bool pad_long_gesture[MUSIC_BOX_LOOP_COUNT];
     MusicBoxEchoCanceller echo_canceller;
     MusicBoxNoiseGate noise_gate;
     MusicBoxCommandQueue *commands;

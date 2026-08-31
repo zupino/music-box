@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MUSIC_BOX_QUEUE_CAPACITY 64u
+#define MUSIC_BOX_QUEUE_CAPACITY 256u
 
 /*
  * Performance mode. It selects what the MPD218 pads do, and the same value

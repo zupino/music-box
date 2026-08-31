@@ -52,20 +52,34 @@ static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *eve
     }
     MusicBoxCommand command = {.slot = 0u, .mode = 0u, .value = (uint8_t)raw,
                                .recording_source = 0u, .tempo_millibpm = 0u};
+    unsigned int editor = 4u;
     if (midi->config.loop_panic_enabled &&
         cc == (unsigned int)midi->config.loop_panic_cc) {
         if (raw >= 64) command.type = MUSIC_BOX_COMMAND_STOP_ALL_LOOPS;
         else return true;
     } else if (cc == (unsigned int)midi->config.loop_select_cc) {
         command.type = MUSIC_BOX_COMMAND_SELECT_LOOP;
+        command.value = (uint8_t)(((unsigned int)raw * MUSIC_BOX_LOOP_COUNT) / 128u);
+        editor = 0u;
     } else if (cc == (unsigned int)midi->config.sample_select_cc) {
         command.type = MUSIC_BOX_COMMAND_SELECT_SAMPLE;
+        command.value = (uint8_t)(((unsigned int)raw * MUSIC_BOX_LOOP_COUNT) / 128u);
+        editor = 1u;
     } else if (cc == (unsigned int)midi->config.trim_start_cc) {
         command.type = MUSIC_BOX_COMMAND_SET_TRIM_START;
+        editor = 2u;
     } else if (cc == (unsigned int)midi->config.trim_end_cc) {
         command.type = MUSIC_BOX_COMMAND_SET_TRIM_END;
+        editor = 3u;
     } else {
         return false;
+    }
+    if (editor < 4u && midi->control_value_sent[editor] &&
+        midi->last_control_value[editor] == command.value)
+        return true;
+    if (editor < 4u) {
+        midi->last_control_value[editor] = command.value;
+        midi->control_value_sent[editor] = true;
     }
     if (!music_box_command_queue_push(midi->commands, &command))
         fprintf(stderr, "MIDI command queue full; control dropped\n");
@@ -220,13 +234,20 @@ static void *midi_thread(void *argument)
             next_connection_scan = now + 1000u;
         }
         snd_seq_event_t *event = NULL;
-        while (snd_seq_event_input(sequencer, &event) >= 0)
+        /* Do not let a CC flood monopolise this thread: hold recognition and
+           delivery of later pad gestures get a scheduling point every batch. */
+        unsigned int event_count = 0u;
+        while (event_count < 64u && snd_seq_event_input(sequencer, &event) >= 0) {
             handle_event(midi, sequencer, output_port, event);
+            event_count++;
+        }
         /* The 5 ms poll is the resolution of the hold threshold; the recording
            itself still starts on an exact transport boundary. */
         check_pad_holds(midi, monotonic_milliseconds());
-        const struct timespec pause = {.tv_sec = 0, .tv_nsec = 5000000};
-        nanosleep(&pause, NULL);
+        if (event_count < 64u) {
+            const struct timespec pause = {.tv_sec = 0, .tv_nsec = 5000000};
+            nanosleep(&pause, NULL);
+        }
     }
     snd_seq_close(sequencer);
     return NULL;

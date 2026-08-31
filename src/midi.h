@@ -26,6 +26,11 @@ typedef struct {
     bool pad_forwarded[MUSIC_BOX_LOOP_COUNT];
     uint8_t pad_recording_source[MUSIC_BOX_LOOP_COUNT];
     bool monitor_modifier_down;
+    /* Last semantic value sent for each continuous editor. MIDI controllers
+       commonly repeat CC values, which must not crowd pad gestures out of the
+       real-time queue. */
+    uint8_t last_control_value[4];
+    bool control_value_sent[4];
     MusicBoxMode mode;
 } MusicBoxMidi;
 

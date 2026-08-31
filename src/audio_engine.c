@@ -89,16 +89,26 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
     }
     MusicBoxLoopBank *bank = bank_for_mode(engine, target);
 
-    if (target == MUSIC_BOX_MODE_LOOP &&
-        command->type == MUSIC_BOX_COMMAND_PAD_HOLD) {
-        /* The press armed playback; a hold is instead the explicit assignment
-           gesture, so cancel that pending start before replacing the track. */
-        MusicBoxLoopSlot *slot = &engine->loop_bank.slots[command->slot];
-        if (slot->state == MUSIC_BOX_LOOP_ARMED_PLAY)
-            slot->state = MUSIC_BOX_LOOP_STOPPED;
-        (void)music_box_loop_bank_assign(&engine->loop_bank, command->slot,
-                                         &engine->sampler_bank,
-                                         engine->selected_sample);
+    if (target == MUSIC_BOX_MODE_LOOP) {
+        /* Loop gestures are resolved on hold/release. Deferring the short tap
+           avoids briefly arming (or stopping) a track before the same gesture
+           becomes an assignment. */
+        if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS) {
+            engine->pad_long_gesture[command->slot] = false;
+            return;
+        }
+        if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) {
+            engine->pad_long_gesture[command->slot] = true;
+            (void)music_box_loop_bank_assign(&engine->loop_bank, command->slot,
+                                             &engine->sampler_bank,
+                                             engine->selected_sample);
+            return;
+        }
+        if (engine->pad_long_gesture[command->slot]) {
+            engine->pad_long_gesture[command->slot] = false;
+            return;
+        }
+        music_box_loop_bank_pad_press(bank, command->slot, &engine->transport);
         return;
     }
 
@@ -141,8 +151,7 @@ static void process_commands(MusicBoxAudioEngine *engine)
             emit_tempo_event(engine);
             break;
         case MUSIC_BOX_COMMAND_SELECT_LOOP:
-            engine->selected_loop = (uint8_t)(((unsigned int)command.value *
-                                                MUSIC_BOX_LOOP_COUNT) / 128u);
+            engine->selected_loop = command.value;
             (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
                 .type = MUSIC_BOX_EVENT_LOOP_SELECTED,
                 .slot = engine->selected_loop,
@@ -150,8 +159,7 @@ static void process_commands(MusicBoxAudioEngine *engine)
                 .value = engine->selected_loop});
             break;
         case MUSIC_BOX_COMMAND_SELECT_SAMPLE:
-            engine->selected_sample = (uint8_t)(((unsigned int)command.value *
-                                                  MUSIC_BOX_LOOP_COUNT) / 128u);
+            engine->selected_sample = command.value;
             (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
                 .type = MUSIC_BOX_EVENT_SAMPLE_SELECTED,
                 .slot = engine->selected_sample,

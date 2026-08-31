@@ -102,6 +102,10 @@ into an unexpected recording or loop-control gesture.
 Every pad is a one-shot recorder. Nothing repeats on its own, and nothing is
 quantized: a sample lasts exactly as long as its pad was held.
 
+The pad itself always chooses the recording/playback slot. Knob 4 only chooses
+the existing sample edited by the trim knobs: K5 moves its start and K6 moves
+its end. The sampler screen therefore does not present K4 as the active slot.
+
 1. Hold a pad past `pad_hold_milliseconds` (400 ms by default): recording runs
    from the moment of the press, with no wait for a beat or bar.
 2. Release: the recording closes immediately and stays with that pad, silent.

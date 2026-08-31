@@ -274,9 +274,9 @@ static void draw_status_column(MusicBoxDisplay *display)
         (void)snprintf(state, sizeof(state), "L%u S%u",
                        (unsigned int)display->selected_loop + 1u,
                        (unsigned int)display->selected_sample + 1u);
-    else if (display->mode == MUSIC_BOX_MODE_SAMPLER)
-        (void)snprintf(state, sizeof(state), "SAMPLE %u",
-                       (unsigned int)display->selected_sample + 1u);
+    /* In sampler mode the pressed pad is the recording/playback slot. K4 only
+       chooses which stored sample K5/K6 edit, so it must not look like the
+       active pad changed. */
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
