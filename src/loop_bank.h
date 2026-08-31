@@ -9,8 +9,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The MPD218's full 4x4 pad grid. Slot 0 is the bottom-left pad, matching the
-   note order the controller sends, so slot / 4 is a physical pad row. */
+/* The MPD218's full 4x4 pad grid. Slot 0 is printed PAD 1 at bottom-left;
+   configuration maps the factory preset's opposite MIDI note-row order. */
 #define MUSIC_BOX_LOOP_COUNT 16u
 #define MUSIC_BOX_PAD_COLUMNS 4u
 #define MUSIC_BOX_PAD_ROWS (MUSIC_BOX_LOOP_COUNT / MUSIC_BOX_PAD_COLUMNS)
@@ -41,6 +41,8 @@ typedef struct {
     size_t trim_end;
     const float *playback_left;
     const float *playback_right;
+    /* Sampler slot referenced by an assigned loop, or UINT8_MAX. */
+    uint8_t assigned_sample;
 } MusicBoxLoopSlot;
 
 /*
@@ -107,9 +109,18 @@ void music_box_loop_bank_record_sample(MusicBoxLoopBank *bank,
                                        float right);
 bool music_box_loop_bank_assign(MusicBoxLoopBank *loops, uint8_t loop_slot,
                                 const MusicBoxLoopBank *samples, uint8_t sample_slot);
+/* Maps one of `division_count` knob positions across recorded samples only.
+   Returns false when the bank has no usable recording. */
+bool music_box_loop_bank_select_recorded(const MusicBoxLoopBank *bank,
+                                         uint8_t position,
+                                         uint8_t division_count,
+                                         uint8_t *slot);
 void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank);
 void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot,
                                   bool start, uint8_t controller_value);
+void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,
+                                          const MusicBoxLoopBank *samples,
+                                          uint8_t sample_slot);
 void music_box_loop_bank_set_recording_source(MusicBoxLoopBank *bank,
                                               MusicBoxRecordingSource source);
 

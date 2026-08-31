@@ -44,6 +44,11 @@ typedef struct {
     bool volume_visible;
     uint32_t volume_hold_milliseconds;
     uint64_t volume_hide_at_milliseconds;
+    bool trim_visible;
+    uint8_t trim_slot;
+    uint8_t trim_start;
+    uint8_t trim_end;
+    uint64_t trim_hide_at_milliseconds;
     uint8_t pixels[MUSIC_BOX_DISPLAY_BUFFER_SIZE];
 } MusicBoxDisplay;
 

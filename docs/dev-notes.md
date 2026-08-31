@@ -517,7 +517,7 @@ than the current `max_sample_seconds`.
 Four items reported after the first build was tried on the box.
 
 **All sixteen pads, not four.** `MUSIC_BOX_LOOP_COUNT` is now 16 and
-`loop_notes` defaults to the full bank B, notes 52-67, listed bottom-left first
+`loop_notes` defaults to the full bank B, notes 52-67, listed in printed pad order
 so slot order matches the physical grid. `parse_loop_notes` now accepts one to
 sixteen notes instead of demanding exactly the slot count, and fills the rest
 with `MUSIC_BOX_NOTE_UNMAPPED`. That matters more than it looks: without it,

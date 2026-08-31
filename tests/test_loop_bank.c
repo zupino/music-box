@@ -46,8 +46,16 @@ static void test_loop_mode(void)
     for (unsigned int frame = 0u; frame < 80u; ++frame)
         process_frame(&samples, &transport, 0.25f);
     music_box_loop_bank_pad_release(&samples, 2u, &transport);
+    uint8_t selected = 0u;
+    assert(music_box_loop_bank_select_recorded(&samples, 0u,
+                                               MUSIC_BOX_LOOP_COUNT, &selected));
+    assert(selected == 2u);
+    assert(music_box_loop_bank_select_recorded(&samples, 15u,
+                                               MUSIC_BOX_LOOP_COUNT, &selected));
+    assert(selected == 2u);
     assert(music_box_loop_bank_assign(&loops, 0u, &samples, 2u));
     assert(loops.slots[0].state == MUSIC_BOX_LOOP_STOPPED);
+    assert(loops.slots[0].assigned_sample == 2u);
 
     music_box_loop_bank_pad_press(&loops, 0u, &transport);
     assert(loops.slots[0].state == MUSIC_BOX_LOOP_ARMED_PLAY);
@@ -65,9 +73,34 @@ static void test_loop_mode(void)
     music_box_loop_bank_set_trim(&samples, 2u, false, 127u);
     assert(samples.slots[2].trim_start > 0u);
     assert(samples.slots[2].trim_end == samples.slots[2].recorded_frames);
+    music_box_loop_bank_sync_assignments(&loops, &samples, 2u);
+    assert(loops.slots[0].trim_start == samples.slots[2].trim_start);
+    assert(loops.slots[0].trim_end == samples.slots[2].trim_end);
 
     music_box_loop_bank_destroy(&loops);
     music_box_loop_bank_destroy(&samples);
+}
+
+static void test_recorded_sample_selection(void)
+{
+    MusicBoxLoopBank samples = {0};
+    uint8_t selected = 99u;
+    assert(!music_box_loop_bank_select_recorded(&samples, 0u, 16u, &selected));
+    samples.slots[3].recorded_frames = 10u;
+    samples.slots[3].trim_end = 10u;
+    samples.slots[11].recorded_frames = 20u;
+    samples.slots[11].trim_start = 2u;
+    samples.slots[11].trim_end = 20u;
+    assert(music_box_loop_bank_select_recorded(&samples, 0u, 16u, &selected));
+    assert(selected == 3u);
+    assert(music_box_loop_bank_select_recorded(&samples, 7u, 16u, &selected));
+    assert(selected == 3u);
+    assert(music_box_loop_bank_select_recorded(&samples, 8u, 16u, &selected));
+    assert(selected == 11u);
+    assert(music_box_loop_bank_select_recorded(&samples, 15u, 16u, &selected));
+    assert(selected == 11u);
+    assert(music_box_loop_bank_select_recorded(&samples, 127u, 128u, &selected));
+    assert(selected == 11u);
 }
 
 /*
@@ -184,6 +217,7 @@ static void test_sampler_preroll_drops_its_own_playback(void)
 int main(void)
 {
     test_loop_mode();
+    test_recorded_sample_selection();
     test_sampler_mode();
     test_sampler_preroll_drops_its_own_playback();
     puts("loop bank tests passed");

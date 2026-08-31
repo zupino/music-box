@@ -85,6 +85,7 @@ static void finish_recording(MusicBoxLoopBank *bank, uint8_t slot_index)
     slot->play_position = 0u;
     if (slot->recorded_frames == 0u) {
         slot->state = MUSIC_BOX_LOOP_EMPTY;
+        slot->assigned_sample = UINT8_MAX;
         return;
     }
     slot->trim_end = slot->recorded_frames;
@@ -465,11 +466,45 @@ bool music_box_loop_bank_assign(MusicBoxLoopBank *loops, uint8_t loop_slot,
     target->trim_start = source->trim_start;
     target->trim_end = source->trim_end;
     target->play_position = target->trim_start;
+    target->assigned_sample = sample_slot;
     target->state = MUSIC_BOX_LOOP_STOPPED;
-    emit_event(loops, MUSIC_BOX_EVENT_RECORD_FINISHED, loop_slot,
-               target->trim_end - target->trim_start);
-    emit_event(loops, MUSIC_BOX_EVENT_LOOP_STOPPED, loop_slot, 0u);
+    emit_event(loops, MUSIC_BOX_EVENT_SAMPLE_ASSIGNED, loop_slot, sample_slot);
     return true;
+}
+
+bool music_box_loop_bank_select_recorded(const MusicBoxLoopBank *bank,
+                                         uint8_t position,
+                                         uint8_t division_count,
+                                         uint8_t *slot)
+{
+    if (bank == NULL || slot == NULL || division_count == 0u ||
+        position >= division_count)
+        return false;
+
+    uint8_t recorded_count = 0u;
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        const MusicBoxLoopSlot *candidate = &bank->slots[index];
+        if (candidate->recorded_frames > 0u &&
+            candidate->trim_end > candidate->trim_start)
+            recorded_count++;
+    }
+    if (recorded_count == 0u) return false;
+
+    const uint8_t wanted = (uint8_t)(((unsigned int)position * recorded_count) /
+                                     division_count);
+    uint8_t ordinal = 0u;
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        const MusicBoxLoopSlot *candidate = &bank->slots[index];
+        if (candidate->recorded_frames == 0u ||
+            candidate->trim_end <= candidate->trim_start)
+            continue;
+        if (ordinal == wanted) {
+            *slot = index;
+            return true;
+        }
+        ordinal++;
+    }
+    return false;
 }
 
 void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank)
@@ -500,6 +535,24 @@ void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot_index,
     }
     if (slot->play_position < slot->trim_start || slot->play_position >= slot->trim_end)
         slot->play_position = slot->trim_start;
+}
+
+void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,
+                                          const MusicBoxLoopBank *samples,
+                                          uint8_t sample_slot)
+{
+    if (sample_slot >= MUSIC_BOX_LOOP_COUNT) return;
+    const MusicBoxLoopSlot *source = &samples->slots[sample_slot];
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        MusicBoxLoopSlot *target = &loops->slots[index];
+        if (target->assigned_sample != sample_slot) continue;
+        target->recorded_frames = source->recorded_frames;
+        target->trim_start = source->trim_start;
+        target->trim_end = source->trim_end;
+        if (target->play_position < target->trim_start ||
+            target->play_position >= target->trim_end)
+            target->play_position = target->trim_start;
+    }
 }
 
 static void push_preroll(MusicBoxLoopBank *bank, float left, float right)

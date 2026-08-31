@@ -105,10 +105,13 @@ static bool parse_loop_notes(const char *text,
 void music_box_config_defaults(MusicBoxConfig *config)
 {
     memset(config, 0, sizeof(*config));
-    /* The MPD218's sixteen pads in bank B, bottom-left first. */
-    for (size_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
-        config->loop_notes[index] = (uint8_t)(52u + index);
-    }
+    /* Factory bank B counts the printed pads from the bottom row while its
+       notes ascend from the top row. Keep slot 0 equal to printed PAD 1. */
+    static const uint8_t notes[MUSIC_BOX_LOOP_COUNT] = {
+        64u, 65u, 66u, 67u, 60u, 61u, 62u, 63u,
+        56u, 57u, 58u, 59u, 52u, 53u, 54u, 55u,
+    };
+    memcpy(config->loop_notes, notes, sizeof(notes));
     /* Sixteen slots per bank multiply this, so the built-in default matches
        the shipped configuration rather than exceeding it. */
     config->max_loop_seconds = 30u;
