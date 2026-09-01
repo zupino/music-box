@@ -332,14 +332,9 @@ void music_box_loop_bank_pad_press(MusicBoxLoopBank *bank,
         break;
     case MUSIC_BOX_LOOP_STOPPED:
         if (slot->recorded_frames == 0u) break;
-        if (bank->quantize_mode == MUSIC_BOX_QUANTIZE_OFF) {
-            slot->state = MUSIC_BOX_LOOP_PLAYING;
-            slot->play_position = slot->trim_start;
-            emit_event(bank, MUSIC_BOX_EVENT_SLOT_STARTED, slot_index,
-                       slot->recorded_frames);
-        } else {
-            slot->state = MUSIC_BOX_LOOP_ARMED_PLAY;
-        }
+        /* Assigned tracks always start on beat one, independently of the edit
+           quantization used for stop operations. */
+        slot->state = MUSIC_BOX_LOOP_ARMED_PLAY;
         break;
 
     case MUSIC_BOX_LOOP_ARMED_RECORD:
@@ -401,7 +396,7 @@ void music_box_loop_bank_apply_boundary(MusicBoxLoopBank *bank,
         music_box_transport_is_boundary(transport, bank->quantize_mode);
     /* Assigned tracks always enter on the next beat. Record/finish/stop keeps
        the configured loop quantization for compatibility. */
-    if (!transport->beat_boundary && !edit_boundary) {
+    if (!transport->beat_boundary && !transport->bar_boundary && !edit_boundary) {
         return;
     }
 
@@ -434,15 +429,23 @@ void music_box_loop_bank_apply_boundary(MusicBoxLoopBank *bank,
             break;
 
         case MUSIC_BOX_LOOP_ARMED_PLAY:
-            if (!transport->beat_boundary) break;
+            if (!transport->bar_boundary) break;
             slot->state = MUSIC_BOX_LOOP_PLAYING;
             slot->play_position = slot->trim_start;
+            slot->waiting_for_bar = false;
             emit_event(bank, MUSIC_BOX_EVENT_SLOT_STARTED, index,
                        slot->recorded_frames);
             break;
 
-        case MUSIC_BOX_LOOP_EMPTY:
         case MUSIC_BOX_LOOP_PLAYING:
+            if (bank->mode != MUSIC_BOX_MODE_LOOP ||
+                !slot->waiting_for_bar || !transport->bar_boundary)
+                break;
+            slot->play_position = slot->trim_start;
+            slot->waiting_for_bar = false;
+            break;
+
+        case MUSIC_BOX_LOOP_EMPTY:
         case MUSIC_BOX_LOOP_STOPPED:
         case MUSIC_BOX_LOOP_ONE_SHOT:
         default:
@@ -464,7 +467,8 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
         const bool one_shot = slot->state == MUSIC_BOX_LOOP_ONE_SHOT;
         const bool repeating = slot->state == MUSIC_BOX_LOOP_PLAYING ||
                                slot->state == MUSIC_BOX_LOOP_ARMED_STOP;
-        if ((!one_shot && !repeating) || slot->recorded_frames == 0u) {
+        if ((!one_shot && !repeating) || slot->recorded_frames == 0u ||
+            (bank->mode == MUSIC_BOX_MODE_LOOP && slot->waiting_for_bar)) {
             continue;
         }
 
@@ -480,6 +484,8 @@ void music_box_loop_bank_mix_sample(MusicBoxLoopBank *bank,
         /* A sample ends at its own tail instead of wrapping like a loop. */
         if (one_shot) {
             stop_one_shot(bank, index);
+        } else if (bank->mode == MUSIC_BOX_MODE_LOOP) {
+            slot->waiting_for_bar = true;
         }
     }
 
@@ -502,6 +508,7 @@ bool music_box_loop_bank_assign(MusicBoxLoopBank *loops, uint8_t loop_slot,
     target->trim_start = source->trim_start;
     target->trim_end = source->trim_end;
     target->play_position = target->trim_start;
+    target->waiting_for_bar = false;
     target->assigned_sample = sample_slot;
     target->state = MUSIC_BOX_LOOP_STOPPED;
     emit_event(loops, MUSIC_BOX_EVENT_SAMPLE_ASSIGNED, loop_slot, sample_slot);
@@ -552,6 +559,7 @@ void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank)
             slot->state != MUSIC_BOX_LOOP_ARMED_PLAY) continue;
         slot->state = MUSIC_BOX_LOOP_STOPPED;
         slot->play_position = slot->trim_start;
+        slot->waiting_for_bar = false;
         emit_event(bank, MUSIC_BOX_EVENT_LOOP_STOPPED, index, 0u);
     }
 }

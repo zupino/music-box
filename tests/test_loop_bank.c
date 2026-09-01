@@ -66,6 +66,18 @@ static void test_loop_mode(void)
     music_box_loop_bank_mix_sample(&loops, &left, &right);
     assert(fabsf(left - 0.25f) < 1.0e-6f);
 
+    /* The 80-frame sample plays once, then stays silent until beat one of the
+       following 400-frame bar instead of wrapping at its own tail. */
+    for (unsigned int frame = 1u; frame < 80u; ++frame)
+        process_frame(&loops, &transport, 0.0f);
+    assert(loops.slots[0].waiting_for_bar);
+    music_box_loop_bank_mix_sample(&loops, &left, &right);
+    assert(fabsf(left) < 1.0e-6f);
+    run_to_frame(&loops, &transport, 800u, 0.0f);
+    assert(!loops.slots[0].waiting_for_bar);
+    music_box_loop_bank_mix_sample(&loops, &left, &right);
+    assert(fabsf(left - 0.25f) < 1.0e-6f);
+
     music_box_loop_bank_stop_all(&loops);
     assert(loops.slots[0].state == MUSIC_BOX_LOOP_STOPPED);
 

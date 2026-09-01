@@ -37,6 +37,9 @@ typedef struct {
     uint64_t record_start_frame;
     MusicBoxLoopState state;
     bool finish_after_start;
+    /* Assigned loops play once per whole bar. After reaching the sample tail,
+       they remain active but silent until the next bar boundary. */
+    bool waiting_for_bar;
     size_t trim_start;
     size_t trim_end;
     const float *playback_left;
