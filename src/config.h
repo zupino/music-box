@@ -38,6 +38,8 @@ typedef struct {
     uint8_t monitor_modifier_cc;
     bool loop_panic_enabled;
     uint8_t loop_panic_cc;
+    bool session_persistence_enabled;
+    char session_directory[MUSIC_BOX_NAME_LENGTH];
 
     uint32_t tempo_millibpm;
     uint32_t beats_per_bar;

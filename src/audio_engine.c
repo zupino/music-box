@@ -151,6 +151,9 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
         music_box_loop_bank_pad_press(bank, command->slot, &engine->transport);
         break;
     case MUSIC_BOX_COMMAND_PAD_HOLD:
+        if (atomic_load_explicit(&engine->persistence_busy,
+                                 memory_order_acquire))
+            break;
         if (target == MUSIC_BOX_MODE_SAMPLER &&
             engine->monitor_recording_slot < MUSIC_BOX_LOOP_COUNT)
             break;
@@ -267,6 +270,9 @@ static void process_commands(MusicBoxAudioEngine *engine)
             }
             break;
         case MUSIC_BOX_COMMAND_TOGGLE_MONITOR_RECORDING:
+            if (atomic_load_explicit(&engine->persistence_busy,
+                                     memory_order_acquire))
+                break;
             if (engine->monitor_recording_slot < MUSIC_BOX_LOOP_COUNT) {
                 const uint8_t slot = engine->monitor_recording_slot;
                 (void)music_box_loop_bank_finish_recording(&engine->sampler_bank,
@@ -381,6 +387,7 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
     engine->commands = commands;
     engine->events = events;
     atomic_init(&engine->jack_shutdown, false);
+    atomic_init(&engine->persistence_busy, false);
     jack_status_t status = 0;
     engine->client = jack_client_open("music_box", JackNoStartServer, &status);
     if (engine->client == NULL) {
@@ -427,6 +434,16 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
         fprintf(stderr, "Cannot register JACK ports\n");
         music_box_audio_engine_destroy(engine);
         return false;
+    }
+    if (!music_box_session_store_init(&engine->session_store, config, sample_rate)) {
+        fprintf(stderr, "Cannot initialize session persistence at %s; continuing without it\n",
+                config->session_directory);
+        engine->session_store.enabled = false;
+    } else if (!music_box_session_store_load(&engine->session_store,
+                                             &engine->sampler_bank,
+                                             &engine->loop_bank, events)) {
+        fprintf(stderr, "Some active-session files could not be restored from %s\n",
+                config->session_directory);
     }
     jack_set_process_callback(engine->client, audio_process, engine);
     jack_on_shutdown(engine->client, jack_shutdown_callback, engine);
@@ -525,4 +542,14 @@ bool music_box_audio_engine_jack_shutdown(const MusicBoxAudioEngine *engine)
 uint32_t music_box_audio_engine_sample_rate(const MusicBoxAudioEngine *engine)
 {
     return engine->transport.sample_rate;
+}
+
+void music_box_audio_engine_persistence_begin(MusicBoxAudioEngine *engine)
+{
+    atomic_store_explicit(&engine->persistence_busy, true, memory_order_release);
+}
+
+void music_box_audio_engine_persistence_end(MusicBoxAudioEngine *engine)
+{
+    atomic_store_explicit(&engine->persistence_busy, false, memory_order_release);
 }

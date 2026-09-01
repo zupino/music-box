@@ -131,6 +131,8 @@ void music_box_config_defaults(MusicBoxConfig *config)
     config->monitor_modifier_cc = 127u;
     config->loop_panic_enabled = false;
     config->loop_panic_cc = 126u;
+    config->session_persistence_enabled = true;
+    strcpy(config->session_directory, "/var/lib/music-box/session");
     config->tempo_millibpm = 120000u;
     config->beats_per_bar = 4u;
     config->quantize_mode = MUSIC_BOX_QUANTIZE_BAR;
@@ -273,6 +275,10 @@ bool music_box_config_load(MusicBoxConfig *config, const char *path)
         } else if (strcmp(key, "loop_panic_cc") == 0) {
             valid = parse_unsigned(value, &unsigned_value) && unsigned_value <= 127u;
             config->loop_panic_cc = (uint8_t)unsigned_value;
+        } else if (strcmp(key, "session_persistence_enabled") == 0) {
+            valid = parse_bool(value, &config->session_persistence_enabled);
+        } else if (strcmp(key, "session_directory") == 0) {
+            valid = copy_name(config->session_directory, value);
         } else if (strcmp(key, "bpm") == 0) {
             valid = parse_float(value, &float_value) && float_value >= 1.0f && float_value <= 400.0f;
             config->tempo_millibpm = (uint32_t)(float_value * 1000.0f + 0.5f);

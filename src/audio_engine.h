@@ -7,6 +7,7 @@
 #include "loop_bank.h"
 #include "noise_gate.h"
 #include "rt_queue.h"
+#include "session_store.h"
 #include "transport.h"
 
 #include <jack/jack.h>
@@ -37,6 +38,8 @@ typedef struct {
     bool pad_long_gesture[MUSIC_BOX_LOOP_COUNT];
     MusicBoxEchoCanceller echo_canceller;
     MusicBoxNoiseGate noise_gate;
+    MusicBoxSessionStore session_store;
+    atomic_bool persistence_busy;
     MusicBoxCommandQueue *commands;
     MusicBoxEventQueue *events;
     atomic_bool jack_shutdown;
@@ -50,5 +53,7 @@ void music_box_audio_engine_destroy(MusicBoxAudioEngine *engine);
 void music_box_audio_engine_connect_ports(MusicBoxAudioEngine *engine);
 bool music_box_audio_engine_jack_shutdown(const MusicBoxAudioEngine *engine);
 uint32_t music_box_audio_engine_sample_rate(const MusicBoxAudioEngine *engine);
+void music_box_audio_engine_persistence_begin(MusicBoxAudioEngine *engine);
+void music_box_audio_engine_persistence_end(MusicBoxAudioEngine *engine);
 
 #endif

@@ -78,6 +78,7 @@ install -m 0755 "$ROOT_DIR/scripts/start-fluidsynth" /usr/local/libexec/music-bo
 install -m 0755 "$ROOT_DIR/scripts/check-system.sh" /usr/local/bin/music-box-check
 
 install -d -m 0755 /etc/music-box
+install -d -o "$MUSIC_BOX_USER" -g audio -m 0755 /var/lib/music-box/session
 if [ ! -e /etc/music-box/music-box.conf ]; then
     install -m 0644 "$ROOT_DIR/config/music-box.conf" /etc/music-box/music-box.conf
 else

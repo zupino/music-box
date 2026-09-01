@@ -100,6 +100,31 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     fflush(stdout);
 }
 
+static void persist_event(MusicBoxAudioEngine *engine,
+                          const MusicBoxEvent *event)
+{
+    const bool completed_sample = event->type == MUSIC_BOX_EVENT_RECORD_FINISHED &&
+        event->bank == (uint8_t)MUSIC_BOX_MODE_SAMPLER;
+    const bool metadata_changed = completed_sample ||
+        event->type == MUSIC_BOX_EVENT_SAMPLE_ASSIGNED ||
+        event->type == MUSIC_BOX_EVENT_TRIM_CHANGED;
+    if (!metadata_changed || !engine->session_store.enabled) return;
+    music_box_audio_engine_persistence_begin(engine);
+    bool ok = true;
+    if (completed_sample)
+        ok = music_box_session_store_save_sample(&engine->session_store,
+                                                 &engine->sampler_bank,
+                                                 event->slot);
+    if (ok)
+        ok = music_box_session_store_save_manifest(&engine->session_store,
+                                                   &engine->sampler_bank,
+                                                   &engine->loop_bank);
+    music_box_audio_engine_persistence_end(engine);
+    if (!ok)
+        fprintf(stderr, "Cannot persist active session in %s\n",
+                engine->session_store.directory);
+}
+
 int main(int argc, char **argv)
 {
     const char *config_path = "/etc/music-box/music-box.conf";
@@ -207,10 +232,12 @@ int main(int argc, char **argv)
             }
             print_event(&event, music_box_audio_engine_sample_rate(&engine));
             music_box_display_handle_event(&display, &event);
+            persist_event(&engine, &event);
         }
         if (have_trim) {
             print_event(&latest_trim, music_box_audio_engine_sample_rate(&engine));
             music_box_display_handle_event(&display, &latest_trim);
+            persist_event(&engine, &latest_trim);
         }
         /* Knob moves are coalesced here so one screen redraw covers a sweep. */
         const uint32_t generation = music_box_volume_generation(&volume);
