@@ -137,9 +137,13 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
     if (target == MUSIC_BOX_MODE_SAMPLER &&
         command->type == MUSIC_BOX_COMMAND_PAD_PRESS) {
         engine->pad_long_gesture[command->slot] = false;
-        engine->recording_source = (MusicBoxRecordingSource)command->recording_source;
-        music_box_loop_bank_set_recording_source(&engine->sampler_bank,
-                                                 engine->recording_source);
+        /* Short taps may play samples into an active monitor take, but must not
+           switch that take back to the microphone. */
+        if (engine->monitor_recording_slot >= MUSIC_BOX_LOOP_COUNT) {
+            engine->recording_source = (MusicBoxRecordingSource)command->recording_source;
+            music_box_loop_bank_set_recording_source(&engine->sampler_bank,
+                                                     engine->recording_source);
+        }
     }
 
     switch (command->type) {
@@ -147,6 +151,9 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
         music_box_loop_bank_pad_press(bank, command->slot, &engine->transport);
         break;
     case MUSIC_BOX_COMMAND_PAD_HOLD:
+        if (target == MUSIC_BOX_MODE_SAMPLER &&
+            engine->monitor_recording_slot < MUSIC_BOX_LOOP_COUNT)
+            break;
         engine->pad_long_gesture[command->slot] = true;
         music_box_loop_bank_pad_hold(bank, command->slot, &engine->transport);
         break;
@@ -271,9 +278,15 @@ static void process_commands(MusicBoxAudioEngine *engine)
                 if (slot >= 0) {
                     engine->recording_source = MUSIC_BOX_RECORD_MONITOR;
                     engine->monitor_recording_slot = (uint8_t)slot;
-                } else {
+                } else if (slot == -1) {
                     (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
                         .type = MUSIC_BOX_EVENT_SAMPLE_BANK_FULL,
+                        .slot = 0u,
+                        .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
+                        .value = 0u});
+                } else {
+                    (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                        .type = MUSIC_BOX_EVENT_RECORDING_BUSY,
                         .slot = 0u,
                         .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
                         .value = 0u});

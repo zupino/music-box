@@ -124,7 +124,8 @@ void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,
 void music_box_loop_bank_set_recording_source(MusicBoxLoopBank *bank,
                                               MusicBoxRecordingSource source);
 /* Starts an immediate, pre-roll-free monitor take in the first empty sampler
-   slot. Returns -1 when no slot is available. */
+   slot. Returns -1 when no slot is available and -2 when another recording is
+   already active. */
 int music_box_loop_bank_start_monitor_recording(MusicBoxLoopBank *bank,
                                                 const MusicBoxTransport *transport);
 bool music_box_loop_bank_finish_recording(MusicBoxLoopBank *bank, uint8_t slot);

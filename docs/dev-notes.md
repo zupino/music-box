@@ -582,7 +582,9 @@ a footer.
 The beat became a rail of four dots down the right edge, small when idle and a
 filled square on the current beat. It costs 5 pixels of width, which this panel
 has to spare, instead of 5 rows of height, which it does not. Cells went from
-28x4 through 16x6 to 14x7: narrower each time, and taller each time.
+28x4 through 16x6 and 14x7 to the current 7x7 squares: narrower each time and,
+finally, wide enough in the status column for the global `REC MIC Sx` or
+`REC MON Sx` indicator.
 
 Then everything went onto one rhythm, which is what made it look deliberate
 rather than merely roomier:

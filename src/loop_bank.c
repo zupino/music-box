@@ -243,6 +243,13 @@ int music_box_loop_bank_start_monitor_recording(MusicBoxLoopBank *bank,
         bank->mode != MUSIC_BOX_MODE_SAMPLER)
         return -1;
     for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        const MusicBoxLoopState state = bank->slots[index].state;
+        if (state == MUSIC_BOX_LOOP_ARMED_RECORD ||
+            state == MUSIC_BOX_LOOP_RECORDING ||
+            state == MUSIC_BOX_LOOP_ARMED_FINISH)
+            return -2;
+    }
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
         MusicBoxLoopSlot *slot = &bank->slots[index];
         if (slot->recorded_frames != 0u || slot->state != MUSIC_BOX_LOOP_EMPTY)
             continue;

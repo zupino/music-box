@@ -53,8 +53,7 @@ static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *eve
     MusicBoxCommand command = {.slot = 0u, .mode = 0u, .value = (uint8_t)raw,
                                .recording_source = 0u, .tempo_millibpm = 0u};
     unsigned int editor = 4u;
-    if (cc == (unsigned int)midi->config.loop_select_cc &&
-        midi->mode == MUSIC_BOX_MODE_PAD) {
+    if (cc == (unsigned int)midi->config.loop_select_cc) {
         const uint64_t now = monotonic_milliseconds();
         /* An absolute knob emits a value for every small step. Treat values
            less than 200 ms apart as one movement, so a sweep toggles once
@@ -72,10 +71,6 @@ static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *eve
         cc == (unsigned int)midi->config.loop_panic_cc) {
         if (raw >= 64) command.type = MUSIC_BOX_COMMAND_STOP_ALL_LOOPS;
         else return true;
-    } else if (cc == (unsigned int)midi->config.loop_select_cc) {
-        command.type = MUSIC_BOX_COMMAND_SELECT_LOOP;
-        command.value = (uint8_t)(((unsigned int)raw * MUSIC_BOX_LOOP_COUNT) / 128u);
-        editor = 0u;
     } else if (cc == (unsigned int)midi->config.sample_select_cc) {
         command.type = MUSIC_BOX_COMMAND_SELECT_SAMPLE;
         /* Keep the full absolute knob position. The audio engine knows which

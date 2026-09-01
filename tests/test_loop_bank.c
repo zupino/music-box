@@ -233,6 +233,7 @@ static void test_monitor_recording_uses_first_empty_slot(void)
     assert(bank.recording_source == MUSIC_BOX_RECORD_MONITOR);
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_RECORDING);
     assert(bank.slots[1].recorded_frames == 0u);
+    assert(music_box_loop_bank_start_monitor_recording(&bank, &transport) == -2);
     process_frame(&bank, &transport, 0.75f);
     assert(music_box_loop_bank_finish_recording(&bank, 1u));
     assert(bank.slots[1].state == MUSIC_BOX_LOOP_STOPPED);

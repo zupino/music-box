@@ -91,6 +91,9 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_SAMPLE_BANK_FULL:
         printf("Monitor recording not started: all sample slots are full\n");
         break;
+    case MUSIC_BOX_EVENT_RECORDING_BUSY:
+        printf("Monitor recording not started: another recording is active\n");
+        break;
     default:
         break;
     }

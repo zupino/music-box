@@ -212,12 +212,14 @@ memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
 `mode_control_enabled=false` pins the box to pad mode.
 
 `quantize` applies to loop mode only. Sampler and monitor recording are always
-unquantized. In pad mode, move K3 in either direction to start capturing the
+unquantized. In any mode, move K3 in either direction to start capturing the
 final speaker mix into the first empty sampler slot; pause, then move K3 again
 in either direction to stop. A continuous sweep is one gesture, not many
-toggles. The completed take is selected for K4/K5/K6 trimming and can be
-assigned to a loop like any microphone recording. Music Box refuses to start
-when all sample slots are occupied rather than overwriting a take.
+toggles. The OLED shows `REC MON Sx` across mode changes. The completed take is
+selected for K4/K5/K6 trimming and can be assigned to a loop like any
+microphone recording. Music Box refuses to start when all sample slots are
+occupied rather than overwriting a take. Microphone recording remains
+available only in sampler mode by holding its destination pad.
 
 Factory MPD218 presets vary here too. Confirm which controller knob 2 sends
 with `aseqdump -p MPD218`, and keep `mode_cc` and `volume_cc` distinct.
@@ -228,26 +230,28 @@ An SSD1306-compatible 128x32 I2C OLED at address `0x3c`. The panel is wide and
 short, so the screen is laid out as three columns rather than stacked rows:
 
 ```text
-+-----------------------------+-+-----------+---+
-| [    ][    ][    ][    ]    | | LOOP      | . |
-| [    ][    ][    ][    ]    | |           | # |
-| [    ][####][    ][    ]    | | 120 BPM   | . |
-| [####][::::][~~~~][    ]    | | REC 6     | . |
-+-----------------------------+-+-----------+---+
++-----------------+-+-----------------+---+
+| [] [] [] []     | | LOOP            | . |
+| [] [] [] []     | |                 | # |
+| [] ## [] []     | | 120 BPM         | . |
+| ## :: ~~ []     | | REC MON S6      | . |
++-----------------+-+-----------------+---+
 ```
 
 Nothing is stacked. The 4x4 map takes the left, a rule separates it from the
 status text, and the beat runs as a rail of four dots down the right edge with
 the current one filled. Each column then gets the panel's full height: the pad
-cells are as tall as the display allows, and mode, tempo and record state each
-get their own line instead of sharing one row.
+cells are square, and mode, tempo and the global record/source state each get
+their own line instead of sharing one row. `REC MIC Sx` identifies a sampler
+pad-hold recording; `REC MON Sx` remains visible in every mode while K3 monitor
+capture is active.
 
 Every gutter and outer margin is 3 pixels, the dots share the map's row pitch,
 and the text lines sit flush with the map's top and bottom, so the three columns
 run on one rhythm. The beat rail is present on every screen, including the
 volume overlay.
 
-The map has the same shape as the controller, pad 1 at the bottom left, so a
+The map has the same shape as the controller, pad 1 at the top left, so a
 cell's position identifies its pad without needing a number:
 
 | Cell | Meaning |

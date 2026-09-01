@@ -33,6 +33,7 @@ static const Glyph font[] = {
     {'C', {0x3e, 0x41, 0x41, 0x41, 0x22}},
     {'D', {0x7f, 0x41, 0x41, 0x22, 0x1c}},
     {'E', {0x7f, 0x49, 0x49, 0x49, 0x41}},
+    {'I', {0x00, 0x41, 0x7f, 0x41, 0x00}},
     {'L', {0x7f, 0x40, 0x40, 0x40, 0x40}},
     {'M', {0x7f, 0x02, 0x0c, 0x02, 0x7f}},
     {'O', {0x3e, 0x41, 0x41, 0x41, 0x3e}},
@@ -126,9 +127,9 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
  * the pad grid, the status text and the beat run as three columns, which lets
  * the grid use the full height instead of sharing it with a header and footer.
  *
- *   x 3-67    rows 0-30   a 4x4 grid mirroring the MPD218 pads
- *   x 71      rows 0-31   a rule separating grid from status
- *   x 75-116  rows 0-30   mode, tempo and record state, one per line
+ *   x 3-36    rows 0-30   a 4x4 square grid mirroring the MPD218 pads
+ *   x 40      rows 0-31   a rule separating grid from status
+ *   x 44-116  rows 0-30  mode, tempo and record/source state
  *   x 120-124 rows 0-30   the beat, four dots, the current one filled
  *
  * Every gutter is 3px and so is every outer margin. The dots share the grid's
@@ -137,9 +138,9 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
  * no loss: the grid has the same shape as the controller, so position
  * identifies the pad.
  */
-#define PAD_CELL_WIDTH 14u
+#define PAD_CELL_WIDTH 7u
 #define PAD_CELL_HEIGHT 7u
-#define PAD_CELL_GAP_X 3u
+#define PAD_CELL_GAP_X 2u
 #define PAD_CELL_GAP_Y 1u
 #define PAD_ORIGIN_X 3u
 #define PAD_GUTTER 3u
@@ -245,6 +246,14 @@ static unsigned int first_slot(uint16_t mask)
     return slot + 1u;
 }
 
+static uint16_t all_recording_slots(const MusicBoxDisplay *display)
+{
+    uint16_t slots = 0u;
+    for (unsigned int mode = 0u; mode < MUSIC_BOX_MODE_COUNT; ++mode)
+        slots |= display->recording_slots[mode];
+    return slots;
+}
+
 /* Seven characters fit beside the grid, which is exactly "SAMPLER". */
 static void draw_status_column(MusicBoxDisplay *display)
 {
@@ -262,11 +271,12 @@ static void draw_status_column(MusicBoxDisplay *display)
 
     /* With sixteen pads the state has to name the pad it belongs to. */
     char state[16] = "";
-    if (display->recording_slots[mode] != 0u)
-        (void)snprintf(state, sizeof(state), "%s %u",
+    const uint16_t recording = all_recording_slots(display);
+    if (recording != 0u)
+        (void)snprintf(state, sizeof(state), "REC %s S%u",
                        display->recording_source == MUSIC_BOX_RECORD_MONITOR
                            ? "MON" : "MIC",
-                       first_slot(display->recording_slots[mode]));
+                       first_slot(recording));
     else if (display->armed_slots[mode] != 0u)
         (void)snprintf(state, sizeof(state), "ARM %u",
                        first_slot(display->armed_slots[mode]));
@@ -477,6 +487,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     case MUSIC_BOX_EVENT_SAMPLE_TRIMMED:
     case MUSIC_BOX_EVENT_SAMPLE_ASSIGN_FAILED:
     case MUSIC_BOX_EVENT_SAMPLE_BANK_FULL:
+    case MUSIC_BOX_EVENT_RECORDING_BUSY:
         return;
     case MUSIC_BOX_EVENT_TRIM_CHANGED:
         display->trim_slot = event->slot;
@@ -523,7 +534,7 @@ void music_box_display_tick(MusicBoxDisplay *display)
        cadence and it runs solely while one of them is pending, so an idle
        Music Box still redraws only when something actually happens. */
     const unsigned int mode = (unsigned int)display->mode;
-    if ((display->armed_slots[mode] | display->recording_slots[mode]) != 0u &&
+    if ((display->armed_slots[mode] | all_recording_slots(display)) != 0u &&
         now >= display->blink_at_milliseconds) {
         display->blink_at_milliseconds = now + BLINK_PERIOD_MILLISECONDS;
         display->blink_on = !display->blink_on;
