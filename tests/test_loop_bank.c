@@ -41,6 +41,10 @@ static void test_loop_mode(void)
                                     MUSIC_BOX_MODE_LOOP, 0u, &events));
     assert(music_box_loop_bank_init(&samples, 100u, 10u, MUSIC_BOX_QUANTIZE_OFF,
                                     MUSIC_BOX_MODE_SAMPLER, 0u, &events));
+    for (uint8_t slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot) {
+        assert(loops.slots[slot].assigned_sample == UINT8_MAX);
+        assert(samples.slots[slot].assigned_sample == UINT8_MAX);
+    }
 
     music_box_loop_bank_pad_hold(&samples, 2u, &transport);
     for (unsigned int frame = 0u; frame < 80u; ++frame)

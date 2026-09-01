@@ -451,6 +451,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->blink_on = true;
         break;
     case MUSIC_BOX_EVENT_RECORD_FINISHED:
+    case MUSIC_BOX_EVENT_RESTORED_SAMPLE:
         display->recording_slots[bank] &= clear;
         display->armed_slots[bank] &= clear;
         display->loaded_slots[bank] |= bit;
@@ -488,6 +489,7 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->selected_sample = event->slot;
         break;
     case MUSIC_BOX_EVENT_SAMPLE_ASSIGNED:
+    case MUSIC_BOX_EVENT_RESTORED_LOOP:
         display->loaded_slots[MUSIC_BOX_MODE_LOOP] |= bit;
         display->playing_slots[MUSIC_BOX_MODE_LOOP] &= clear;
         display->pending_stop_slots[MUSIC_BOX_MODE_LOOP] &= clear;

@@ -96,6 +96,13 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_RECORDING_BUSY:
         printf("Monitor recording not started: another recording is active\n");
         break;
+    case MUSIC_BOX_EVENT_RESTORED_SAMPLE:
+        printf("Sample %u: restored from active session\n", slot);
+        break;
+    case MUSIC_BOX_EVENT_RESTORED_LOOP:
+        printf("Loop %u: restored sample %llu assignment\n", slot,
+               (unsigned long long)event->value + 1u);
+        break;
     default:
         break;
     }

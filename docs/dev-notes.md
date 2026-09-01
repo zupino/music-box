@@ -1,5 +1,19 @@
 # Development Notes
 
+## 2026-09-01 — Active-session restore hardening
+
+The first persistence manifest inherited zero-initialized `assigned_sample`
+fields, so every unassigned loop was serialized as if it referenced S1. Loop
+slots now initialize that field to `UINT8_MAX`, and manifest version 2 preserves
+real S1 assignments unambiguously. On loading version 1, ambiguous S1 loop
+entries are ignored; non-S1 assignments and all samples/trims are retained.
+
+Restored samples and assignments now use startup-only display events. They must
+not reuse live `RECORD_FINISHED`/`SAMPLE_ASSIGNED` events, because the main loop
+would interpret those as new edits and synchronously rewrite every restored
+sample just after JACK activation. Avoiding that redundant I/O also removes a
+large SD-card latency burst during the first seconds after boot.
+
 ## 2026-09-01 — Whole-bar assigned loops
 
 Assigned samples now start on beat one and play at most once per bar. A short

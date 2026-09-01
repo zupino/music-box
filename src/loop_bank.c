@@ -144,6 +144,7 @@ bool music_box_loop_bank_init(MusicBoxLoopBank *bank,
         }
         slot->capacity_frames = capacity;
         slot->state = MUSIC_BOX_LOOP_EMPTY;
+        slot->assigned_sample = UINT8_MAX;
         slot->playback_left = slot->left;
         slot->playback_right = slot->right;
 

@@ -75,7 +75,11 @@ typedef enum {
     MUSIC_BOX_EVENT_SAMPLE_TRIMMED,
     MUSIC_BOX_EVENT_TRIM_CHANGED,
     MUSIC_BOX_EVENT_SAMPLE_BANK_FULL,
-    MUSIC_BOX_EVENT_RECORDING_BUSY
+    MUSIC_BOX_EVENT_RECORDING_BUSY,
+    /* Startup-only UI reconstruction. These deliberately differ from live
+       edit events so restored state is not written back to disk immediately. */
+    MUSIC_BOX_EVENT_RESTORED_SAMPLE,
+    MUSIC_BOX_EVENT_RESTORED_LOOP
 } MusicBoxEventType;
 
 typedef struct {

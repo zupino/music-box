@@ -119,7 +119,7 @@ bool music_box_session_store_save_manifest(const MusicBoxSessionStore *store,
         return false;
     FILE *file = fopen(temporary, "w");
     if (file == NULL) return false;
-    bool ok = fprintf(file, "version 1\nrate %u\n", store->sample_rate) > 0;
+    bool ok = fprintf(file, "version 2\nrate %u\n", store->sample_rate) > 0;
     for (uint8_t index = 0u; ok && index < MUSIC_BOX_LOOP_COUNT; ++index) {
         const MusicBoxLoopSlot *slot = &samples->slots[index];
         ok = fprintf(file, "sample %u %zu %zu %zu\n", (unsigned int)index,
@@ -177,7 +177,7 @@ bool music_box_session_store_load(const MusicBoxSessionStore *store,
         if (!load_sample(store, samples, index)) ok = false;
         if (samples->slots[index].recorded_frames > 0u && events != NULL)
             (void)music_box_event_queue_push(events, &(MusicBoxEvent){
-                .type = MUSIC_BOX_EVENT_RECORD_FINISHED, .slot = index,
+                .type = MUSIC_BOX_EVENT_RESTORED_SAMPLE, .slot = index,
                 .bank = (uint8_t)MUSIC_BOX_MODE_SAMPLER,
                 .value = samples->slots[index].recorded_frames});
     }
@@ -186,32 +186,47 @@ bool music_box_session_store_load(const MusicBoxSessionStore *store,
     if (!path_for(path, sizeof(path), store, "manifest", UINT8_MAX, false)) return false;
     FILE *file = fopen(path, "r");
     if (file == NULL) return errno == ENOENT ? ok : false;
-    char kind[16];
-    unsigned int index = 0u;
-    unsigned long long frames = 0u, start = 0u, end = 0u;
-    while (fscanf(file, "%15s", kind) == 1) {
-        if (strcmp(kind, "sample") == 0 &&
-            fscanf(file, "%u %llu %llu %llu", &index, &frames, &start, &end) == 4) {
+    unsigned int version = 0u;
+    char line[160];
+    while (fgets(line, sizeof(line), file) != NULL) {
+        unsigned int index = 0u;
+        unsigned long long frames = 0u, start = 0u, end = 0u;
+        if (sscanf(line, "version %u", &version) == 1) {
+            continue;
+        }
+        if (sscanf(line, "sample %u %llu %llu %llu",
+                   &index, &frames, &start, &end) == 4) {
             if (index < MUSIC_BOX_LOOP_COUNT &&
                 samples->slots[index].recorded_frames == (size_t)frames &&
                 start < end && end <= frames) {
                 samples->slots[index].trim_start = (size_t)start;
                 samples->slots[index].trim_end = (size_t)end;
             }
-        } else if (strcmp(kind, "loop") == 0) {
-            unsigned int sample = UINT8_MAX;
-            if (fscanf(file, "%u %u", &index, &sample) != 2) break;
-            if (index < MUSIC_BOX_LOOP_COUNT && sample < MUSIC_BOX_LOOP_COUNT)
-                (void)music_box_loop_bank_assign(loops, (uint8_t)index, samples,
-                                                 (uint8_t)sample);
         } else {
-            char discard[128];
-            if (fgets(discard, sizeof(discard), file) == NULL && ferror(file)) {
-                ok = false;
-                break;
+            unsigned int sample = UINT8_MAX;
+            if (sscanf(line, "loop %u %u", &index, &sample) != 2)
+                continue;
+            /* Version 1 accidentally serialized every unassigned loop as S1
+               because zero-initialized assigned_sample was not UINT8_MAX.
+               Ignore ambiguous S1 entries from that format; genuine S1
+               assignments can be made again and are unambiguous in v2. */
+            if (version < 2u && sample == 0u) continue;
+            if (index < MUSIC_BOX_LOOP_COUNT && sample < MUSIC_BOX_LOOP_COUNT) {
+                MusicBoxEventQueue *saved_events = loops->events;
+                loops->events = NULL;
+                const bool assigned = music_box_loop_bank_assign(
+                    loops, (uint8_t)index, samples, (uint8_t)sample);
+                loops->events = saved_events;
+                if (assigned && events != NULL)
+                    (void)music_box_event_queue_push(events, &(MusicBoxEvent){
+                        .type = MUSIC_BOX_EVENT_RESTORED_LOOP,
+                        .slot = (uint8_t)index,
+                        .bank = (uint8_t)MUSIC_BOX_MODE_LOOP,
+                        .value = sample});
             }
         }
     }
+    if (ferror(file)) ok = false;
     fclose(file);
     return ok;
 }
