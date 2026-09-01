@@ -13,6 +13,7 @@ SOURCES = \
 	src/rt_queue.c \
 	src/transport.c \
 	src/loop_bank.c \
+	src/melody.c \
 	src/echo_cancel.c \
 	src/noise_gate.c \
 	src/session_store.c \
@@ -26,6 +27,7 @@ TEST_BINS = \
 	build/test_transport \
 	build/test_queue \
 	build/test_loop_bank \
+	build/test_melody \
 	build/test_config \
 	build/test_echo_cancel \
 	build/test_noise_gate \
@@ -52,6 +54,9 @@ build/test_queue: tests/test_queue.c src/rt_queue.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
 
 build/test_loop_bank: tests/test_loop_bank.c src/loop_bank.c src/transport.c src/rt_queue.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
+
+build/test_melody: tests/test_melody.c src/melody.c src/loop_bank.c src/transport.c src/rt_queue.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^
 
 build/test_config: tests/test_config.c src/config.c | build

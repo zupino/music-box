@@ -102,6 +102,13 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
         report_pad_note(engine, command);
         return;
     }
+    if (target == MUSIC_BOX_MODE_MELODY) {
+        if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS)
+            (void)music_box_melody_trigger(&engine->melody, command->slot,
+                                           engine->selected_sample,
+                                           &engine->sampler_bank);
+        return;
+    }
     MusicBoxLoopBank *bank = bank_for_mode(engine, target);
 
     if (target == MUSIC_BOX_MODE_LOOP) {
@@ -327,11 +334,15 @@ static int audio_process(jack_nframes_t frame_count, void *argument)
         float loop_right = 0.0f;
         float sample_left = 0.0f;
         float sample_right = 0.0f;
+        float melody_left = 0.0f;
+        float melody_right = 0.0f;
         music_box_loop_bank_mix_sample(&engine->loop_bank, &loop_left, &loop_right);
         music_box_loop_bank_mix_sample(&engine->sampler_bank, &sample_left, &sample_right);
+        music_box_melody_mix_sample(&engine->melody, &engine->sampler_bank,
+                                    &melody_left, &melody_right);
         /* Both banks play at once: switching mode never silences a running loop. */
-        const float played_left = loop_left + sample_left;
-        const float played_right = loop_right + sample_right;
+        const float played_left = loop_left + sample_left + melody_left;
+        const float played_right = loop_right + sample_right + melody_right;
         const float mixed_left = (synth_left[frame] * engine->config.synth_gain + played_left * engine->config.loop_gain) * engine->config.master_gain;
         const float mixed_right = (synth_right[frame] * engine->config.synth_gain + played_right * engine->config.loop_gain) * engine->config.master_gain;
         const float final_left = clamp_sample(mixed_left);
@@ -396,6 +407,7 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
     }
     engine->mode = MUSIC_BOX_MODE_PAD;
     engine->monitor_recording_slot = UINT8_MAX;
+    music_box_melody_init(&engine->melody, events);
     const uint32_t sample_rate = jack_get_sample_rate(engine->client);
     if (!music_box_transport_init(&engine->transport, sample_rate, config->tempo_millibpm, config->beats_per_bar) ||
         !music_box_echo_cancel_init(&engine->echo_canceller, config->aec_enabled, config->aec_taps,

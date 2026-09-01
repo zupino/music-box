@@ -19,7 +19,7 @@ It produces three principal sinks:
 
 - WM8960 left speaker output;
 - WM8960 right speaker output;
-- thirty-two stereo recording buffers in memory: sixteen loops and sixteen samples.
+- sixteen stereo sampler buffers in memory; loop tracks reference that storage.
 
 The final speaker-bound signal is also reused internally as the reference for acoustic echo reduction.
 
@@ -334,19 +334,21 @@ A release received while still `ARMED_RECORD` is remembered. Recording begins at
 
 ## Performance modes
 
-The sixteen pads drive one of three modes, chosen by the mode knob. Each bank is a
-separate `MusicBoxLoopBank` with its own sixteen stereo buffers, so a sample
-never overwrites a loop. Both banks are mixed and both advance their boundaries on
-every frame regardless of the active mode, which is what lets a loop keep
-playing after a switch to sampler mode.
+The sixteen pads drive four modes chosen by the mode knob: loop, sampler, pad
+and melody. The sampler bank owns sixteen stereo buffers; loop tracks reference
+assigned sampler storage rather than duplicating it. Both banks advance on
+every frame regardless of active mode, so loops survive mode changes.
 
 The recording half of the state machine is shared. The mode only changes two
 things: which gesture arms a recording, and what a finished recording does.
 
-Pad mode is the third and owns no bank at all: its notes are forwarded to
+Pad mode owns no bank: its notes are forwarded to
 FluidSynth by the MIDI thread, and the only reason a pad command still reaches
 the audio thread is so the display can light the cell while the pad is held.
 Both recording banks keep playing underneath, which is the point of the mode.
+
+Melody mode also owns no recording bank. It creates up to sixteen resampling
+voices from the K4-selected sampler slot, with PAD 9 at the original pitch.
 
 | | Loop bank | Sampler bank |
 |---|---|---|
@@ -355,7 +357,7 @@ Both recording banks keep playing underneath, which is the point of the mode.
 | Recorded interval | boundary to boundary | press to release |
 | Pad press on a slot holding audio | arms a stop | plays it once from the start |
 | A closed recording | starts repeating immediately | waits silently for a tap |
-| End of the stored audio | wraps to frame zero | stops and returns to STOPPED |
+| End of the stored audio | waits until beat one of the next bar | stops and returns to STOPPED |
 
 A sampler bank is built with `MUSIC_BOX_QUANTIZE_OFF` regardless of the
 configured `quantize`, so it reuses the state machine's existing unquantized
@@ -415,8 +417,8 @@ PLAYING --> STOPPED : pad press\nquantization off
 ARMED_STOP --> STOPPED : next beat/bar boundary
 
 note right of PLAYING
-Recorded samples remain in memory when stopped.
-A later recording replaces the slot contents.
+Recorded samples remain in memory when stopped and are atomically persisted
+outside the JACK callback. A later recording replaces the slot contents.
 end note
 @enduml
 ```

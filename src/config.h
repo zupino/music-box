@@ -13,10 +13,10 @@
 /* MIDI notes are 0-127, so this cannot collide with a real mapping. */
 #define MUSIC_BOX_NOTE_UNMAPPED 0xffu
 
-/* The mode knob is an absolute pot, so the three modes take a third of its
-   travel each: loop, then sampler, then pad. */
-#define MUSIC_BOX_MODE_FIRST_SWITCH 42
-#define MUSIC_BOX_MODE_SECOND_SWITCH 85
+/* The absolute mode knob is split into loop, sampler, pad and melody quarters. */
+#define MUSIC_BOX_MODE_FIRST_SWITCH 31
+#define MUSIC_BOX_MODE_SECOND_SWITCH 63
+#define MUSIC_BOX_MODE_THIRD_SWITCH 95
 
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];

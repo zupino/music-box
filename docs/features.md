@@ -22,20 +22,36 @@ This page summarises the capabilities currently implemented on the main developm
   four-slot configuration still starts;
 - knob 4 selects an existing sampler recording;
 - holding a pad assigns that sample to the corresponding track;
-- tapping an assigned track starts it on the next beat;
+- tapping an assigned track starts it on beat one of the next bar;
 - pressing a playing loop arms its stop;
-- the track repeats at the sample's exact trimmed length.
+- the track plays once per whole bar, leaving silence after short samples.
 
 ### Performance modes
 
-- three modes, loop, sampler and pad, sharing the same sixteen pads;
-- an MPD218 knob selects the mode, a third of its travel each, with a
+- four modes, loop, sampler, pad and melody, sharing the same sixteen pads;
+- an MPD218 knob selects the mode, a quarter of its travel each, with a
   configurable dead band that sets how much rotation a change costs;
 - only sampler mode records; loop mode manages sample assignments;
 - both banks are always mixed, so a running loop survives any mode change;
 - the bank that received a pad press also receives its release, so changing
   mode mid-gesture cannot strand a recording;
 - disabling the knob leaves the startup mode pinned to pad.
+
+### Melody mode
+
+- knob 4 selects an existing recorded sample;
+- PAD 9 plays the sample at its original pitch;
+- pads 1-8 descend chromatically and pads 10-16 ascend chromatically;
+- voices overlap polyphonically and respect the selected sample's trim;
+- pitch and duration change together through linear resampling.
+
+### Active-session recovery
+
+- every completed sample is synchronously persisted outside the JACK callback;
+- atomic rename and directory syncing protect the previous file from sudden power loss;
+- trims and loop assignments are stored in an atomic manifest;
+- valid samples and assignments are restored automatically at startup;
+- restored loop tracks remain stopped until explicitly started.
 
 ### Pad mode
 
@@ -69,7 +85,7 @@ This page summarises the capabilities currently implemented on the main developm
 - one sample-accurate transport shared by all loop slots;
 - configurable BPM;
 - configurable beats per bar;
-- assigned-loop starts are anchored to the next beat;
+- assigned-loop starts and repeats are anchored to beat one of a bar;
 - quantization modes off, beat, or bar apply to loop stops;
 - quantized loop stop, with the loop sounding out its current cycle and shown
   as leaving until the boundary arrives;

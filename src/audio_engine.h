@@ -5,6 +5,7 @@
 #include "config.h"
 #include "echo_cancel.h"
 #include "loop_bank.h"
+#include "melody.h"
 #include "noise_gate.h"
 #include "rt_queue.h"
 #include "session_store.h"
@@ -26,6 +27,7 @@ typedef struct {
     MusicBoxTransport transport;
     MusicBoxLoopBank loop_bank;
     MusicBoxLoopBank sampler_bank;
+    MusicBoxMelody melody;
     MusicBoxMode mode;
     uint8_t selected_loop;
     uint8_t selected_sample;

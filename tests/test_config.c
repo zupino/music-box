@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static bool load(const char *body, MusicBoxConfig *config)
 {
@@ -36,6 +37,8 @@ int main(void)
     assert(config.trim_end_cc == 15u);
     assert(config.noise_gate_enabled);
     assert(!config.display_rotate_180);
+    assert(config.session_persistence_enabled);
+    assert(strcmp(config.session_directory, "/var/lib/music-box/session") == 0);
 
     /* A configuration written when the looper had four slots still starts, and
        leaves the other twelve pads inert rather than failing to parse. */
@@ -67,29 +70,34 @@ int main(void)
 
     assert(load("display_rotate_180=true\n", &config));
     assert(config.display_rotate_180);
+    assert(load("session_persistence_enabled=false\n"
+                "session_directory=/tmp/music-box-session\n", &config));
+    assert(!config.session_persistence_enabled);
+    assert(strcmp(config.session_directory, "/tmp/music-box-session") == 0);
 
-    /* The knob's travel is three zones: loop, sampler, pad. */
+    /* The knob's travel is four zones: loop, sampler, pad, melody. */
     assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 0u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 64u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 127u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 48u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 80u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 127u, 2u) == MUSIC_BOX_MODE_MELODY);
 
     /* Each switch costs only the dead band, and inside it the mode holds. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 40u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 42u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 44u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 83u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 87u, 2u) == MUSIC_BOX_MODE_PAD);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 84u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 29u, 2u) == MUSIC_BOX_MODE_LOOP);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 31u, 2u) == MUSIC_BOX_MODE_LOOP);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 33u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 65u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 97u, 2u) == MUSIC_BOX_MODE_MELODY);
 
     /* Every position resolves when the dead band is off, and a switch point
-       itself belongs to the outer zone: 0-42 loop, 43-84 sampler, 85-127 pad. */
+       itself belongs to the lower zone. */
     for (unsigned int value = 0u; value <= 127u; ++value)
         assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, (uint8_t)value, 0u) ==
-               (value <= 42u ? MUSIC_BOX_MODE_LOOP
-                             : value < 85u ? MUSIC_BOX_MODE_SAMPLER : MUSIC_BOX_MODE_PAD));
+               (value <= 31u ? MUSIC_BOX_MODE_LOOP
+                : value <= 63u ? MUSIC_BOX_MODE_SAMPLER
+                : value <= 95u ? MUSIC_BOX_MODE_PAD : MUSIC_BOX_MODE_MELODY));
 
     /* The middle zone survives the widest dead band the parser accepts. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 64u, 16u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 47u, 16u) == MUSIC_BOX_MODE_SAMPLER);
 
     puts("config tests passed");
     return 0;

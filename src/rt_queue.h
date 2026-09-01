@@ -16,10 +16,11 @@
 typedef enum {
     MUSIC_BOX_MODE_LOOP = 0,
     MUSIC_BOX_MODE_SAMPLER,
-    MUSIC_BOX_MODE_PAD
+    MUSIC_BOX_MODE_PAD,
+    MUSIC_BOX_MODE_MELODY
 } MusicBoxMode;
 
-#define MUSIC_BOX_MODE_COUNT 3u
+#define MUSIC_BOX_MODE_COUNT 4u
 
 typedef enum {
     MUSIC_BOX_COMMAND_PAD_PRESS = 1,
@@ -32,7 +33,7 @@ typedef enum {
     MUSIC_BOX_COMMAND_SELECT_SAMPLE,
     MUSIC_BOX_COMMAND_SET_TRIM_START,
     MUSIC_BOX_COMMAND_SET_TRIM_END,
-    /* One deliberate K3 movement in pad mode starts or stops capture of the
+    /* One deliberate K3 movement in any mode starts or stops capture of the
        final speaker mix into the first empty sampler slot. */
     MUSIC_BOX_COMMAND_TOGGLE_MONITOR_RECORDING,
     MUSIC_BOX_COMMAND_STOP_ALL_LOOPS

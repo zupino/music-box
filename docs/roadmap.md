@@ -28,11 +28,15 @@ Future controller mappings may use one MPD218 knob for master output volume and 
 
 ### Loop editing
 
-Possible later additions: overdub/undo, mute/resume without replacement, fixed 1/2/4/8-bar lengths, persistent loop save/load and per-loop gain.
+Possible later additions: overdub/undo, mute/resume without replacement,
+selectable 1/2/4/8-bar lengths, named session browsing and per-loop gain.
 
-### One-shot recording persistence
+### Session library
 
-Sampler mode now provides short pad-associated recordings that play once per tap instead of repeating. What remains deferred is keeping them across a restart: samples live only in memory, and a save/load format, naming and storage location still need to be designed.
+The active samples, trims and loop assignments now survive restart and sudden
+power loss. A future Files mode may add named sessions, browsing, explicit
+load/delete actions and delete-all confirmation; those library operations are
+deliberately separate from automatic recovery.
 
 ### Repeat/stutter effect
 

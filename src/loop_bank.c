@@ -394,7 +394,7 @@ void music_box_loop_bank_apply_boundary(MusicBoxLoopBank *bank,
 {
     const bool edit_boundary = bank->quantize_mode != MUSIC_BOX_QUANTIZE_OFF &&
         music_box_transport_is_boundary(transport, bank->quantize_mode);
-    /* Assigned tracks always enter on the next beat. Record/finish/stop keeps
+    /* Assigned tracks always enter on the next bar. Record/finish/stop keeps
        the configured loop quantization for compatibility. */
     if (!transport->beat_boundary && !transport->bar_boundary && !edit_boundary) {
         return;

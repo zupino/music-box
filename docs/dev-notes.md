@@ -1,11 +1,18 @@
 # Development Notes
 
-## 2026-08-31 — Exact-length, beat-anchored assigned loops
+## 2026-09-01 — Whole-bar assigned loops
+
+Assigned samples now start on beat one and play at most once per bar. A short
+sample leaves silence until the next bar; a sample longer than a bar finishes
+and waits for the following bar boundary. This keeps every restart on the
+shared musical cycle without time stretching or truncating source material.
+
+## 2026-08-31 — Original exact-length assigned-loop decision (superseded)
 
 The first sample-to-loop implementation deliberately separates phase anchoring
 from loop duration. A track starts on the next shared beat, but then wraps at
 the selected sample's exact trimmed length. A 0.8-second sample therefore
-repeats every 0.8 seconds; it is neither padded nor stretched to the transport.
+repeated every 0.8 seconds; it was neither padded nor stretched to the transport.
 
 Later design topics include beat/bar padding, fixed musical lengths,
 time-stretching, transient-aware slicing, wrap crossfades, and whether

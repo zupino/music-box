@@ -175,7 +175,9 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
             midi->pad_forwarded[slot] = false;
         }
         /* Only a looping or sampling pad needs its hold timed. */
-        midi->pad_held[slot] = pressed && !forward;
+        midi->pad_held[slot] = pressed &&
+            (midi->mode == MUSIC_BOX_MODE_LOOP ||
+             midi->mode == MUSIC_BOX_MODE_SAMPLER);
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
         if (!forward) return;
     }

@@ -189,10 +189,13 @@ MusicBoxMode music_box_mode_for_knob(MusicBoxMode current, uint8_t value,
     const int position = (int)value;
     const int dead_band = (int)hysteresis;
     if (position <= MUSIC_BOX_MODE_FIRST_SWITCH - dead_band) return MUSIC_BOX_MODE_LOOP;
-    if (position >= MUSIC_BOX_MODE_SECOND_SWITCH + dead_band) return MUSIC_BOX_MODE_PAD;
     if (position >= MUSIC_BOX_MODE_FIRST_SWITCH + dead_band &&
         position <= MUSIC_BOX_MODE_SECOND_SWITCH - dead_band)
         return MUSIC_BOX_MODE_SAMPLER;
+    if (position >= MUSIC_BOX_MODE_SECOND_SWITCH + dead_band &&
+        position <= MUSIC_BOX_MODE_THIRD_SWITCH - dead_band)
+        return MUSIC_BOX_MODE_PAD;
+    if (position >= MUSIC_BOX_MODE_THIRD_SWITCH + dead_band) return MUSIC_BOX_MODE_MELODY;
     /* Inside a dead band: hold whatever the knob last resolved to. */
     return current;
 }
@@ -203,6 +206,7 @@ const char *music_box_mode_name(MusicBoxMode mode)
     case MUSIC_BOX_MODE_LOOP: return "loop";
     case MUSIC_BOX_MODE_SAMPLER: return "sampler";
     case MUSIC_BOX_MODE_PAD: return "pad";
+    case MUSIC_BOX_MODE_MELODY: return "melody";
     default: return "unknown";
     }
 }

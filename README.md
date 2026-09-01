@@ -28,10 +28,12 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 - stereo recording from both WM8960 microphones;
 - sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
 - sampler-only recording from either cleaned microphones or the speaker monitor;
-- sample assignment to loop tracks, with beat-anchored starts;
-- three performance modes on the same pads: loop, sampler and pad;
+- sample assignment to loop tracks, with bar-anchored starts and repeats;
+- four performance modes on the same pads: loop, sampler, pad and melody;
 - sampler mode gives each pad a one-shot recording of its own;
 - pad mode plays the FluidSynth SoundFont straight from the sixteen pads;
+- melody mode plays the K4-selected sample chromatically around PAD 9;
+- immediate, crash-safe persistence of active samples, trims and assignments;
 - knob 2 switches mode without silencing anything already playing;
 - knobs 3-6 select tracks and samples and trim sample heads and tails;
 - non-loop MIDI forwarded to FluidSynth;
@@ -56,7 +58,7 @@ Also intended: Ubuntu Server LTS when the WM8960 driver is functioning, and the 
 
 ```text
 MPD218 -> Music Box MIDI router
-            |-- notes 52-67 -> loop or sampler pad commands
+            |-- notes 52-67 -> loop, sampler or melody pad commands
             |                  (forwarded to FluidSynth in pad mode)
             |-- knob 2      -> performance mode
             `-- other MIDI -> FluidSynth
@@ -72,9 +74,9 @@ FluidSynth is routed through Music Box rather than directly to the physical play
 
 ## Controls
 
-All sixteen pads, notes 52 to 67, drive three performance modes. Knob 2 (K2,
-bank A, CC 9 by default) chooses between them, a third of its travel each:
-loop, then sampler, then pad.
+All sixteen pads, notes 52 to 67, drive four performance modes. Knob 2 (K2,
+bank A, CC 9 by default) chooses between them, a quarter of its travel each:
+loop, then sampler, pad and melody.
 
 Pads are numbered the way the MPD218 labels them, top-left first. In the
 factory bank-B preset pad 1 is note 64 and pad 16 is note 55 because MIDI notes
@@ -85,13 +87,16 @@ ascend from the controller's opposite row. The display follows printed labels.
 Loop mode manages tracks; it never records or trims samples. Knob 4 selects
 among recorded samples only. Holding a pad assigns the selected sample to that
 pad's loop track: holding pad 2 assigns it to loop 2. A short press starts or
-stops the same track. K3 is no longer needed and is not shown in loop mode.
-Starts wait for the next beat, then the trimmed sample repeats at its exact
-length. Stops continue to use the configured `quantize` boundary.
+stops the same track. K3 retains its global monitor-recording toggle in this
+mode but is not used to choose the destination loop.
+Starts wait for beat one of the next bar. The trimmed sample plays once and,
+if it is shorter than the bar, remains silent until beat one before restarting.
+A sample longer than a bar plays fully and restarts on the first bar boundary
+after its tail. Stops continue to use the configured `quantize` boundary.
 
 1. Turn knob 4 to select a recorded sample.
 2. Hold a loop pad to assign that sample to the corresponding track.
-3. Tap the pad: playback starts at the next beat.
+3. Tap the pad: playback starts on beat one of the next bar.
 4. Press a playing pad: stop is armed for the configured boundary. The loop keeps sounding
    out the current cycle, and the display hatches its cell to show it is on the
    way out. Pressing again before the boundary cancels the stop.
@@ -142,6 +147,24 @@ how you play over what you have already recorded. A Note Off always follows its
 own Note On, so turning the knob while a pad is down cannot leave a note hanging
 on the synthesizer.
 
+### Melody mode
+
+Knob 4 selects one of the recorded samples, using the same sparse recorded-slot
+selection as loop mode. The pads play pitched one-shot voices from that
+sample's trimmed range. PAD 9 is the original pitch; PAD 1 starts eight
+semitones below it, and PAD 16 is seven semitones above it. Voices are
+polyphonic, and pitch shifting uses resampling, so lower notes last longer and
+higher notes finish sooner.
+
+### Active-session persistence
+
+Every completed recording is written immediately to `session_directory`, then
+its trims and loop assignments are committed as an atomic manifest. Files are
+synced before an atomic rename, so an interrupted write leaves the previous
+complete version in place. At startup Music Box restores all valid samples and
+loop assignments; restored loops are loaded but stopped. This is automatic
+recovery of the current session, not a session browser or archive manager.
+
 Sampler audio and assigned loop-track state are separate, so assignment does
 not overwrite a sample. Assigned loops keep playing while sampler pads are used, and
 samples keep playing after a switch back. That also means a sampler recording
@@ -150,14 +173,15 @@ stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
 it is moved, so a freshly started service is always in pad mode regardless of
-where the knob is parked. Its travel splits into three zones with a switch at
+where the knob is parked. Its travel splits into four zones with a switch at
 each boundary:
 
 | Knob | Mode |
 |---|---|
-| 0–42 | loop |
-| 43–84 | sampler |
-| 85–127 | pad |
+| 0–31 | loop |
+| 32–63 | sampler |
+| 64–95 | pad |
+| 96–127 | melody |
 
 Each switch has a dead band of `mode_cc_hysteresis` counts either side that
 holds the current mode. That dead band is the only rotation a mode change costs

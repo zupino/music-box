@@ -43,6 +43,7 @@ static const Glyph font[] = {
     {'S', {0x46, 0x49, 0x49, 0x49, 0x31}},
     {'U', {0x3f, 0x40, 0x40, 0x40, 0x3f}},
     {'V', {0x1f, 0x20, 0x40, 0x20, 0x1f}},
+    {'Y', {0x07, 0x08, 0x70, 0x08, 0x07}},
     {'%', {0x63, 0x13, 0x08, 0x64, 0x63}},
 };
 
@@ -258,7 +259,9 @@ static uint16_t all_recording_slots(const MusicBoxDisplay *display)
 /* Seven characters fit beside the grid, which is exactly "SAMPLER". */
 static void draw_status_column(MusicBoxDisplay *display)
 {
-    static const char *const labels[MUSIC_BOX_MODE_COUNT] = {"LOOP", "SAMPLER", "PAD"};
+    static const char *const labels[MUSIC_BOX_MODE_COUNT] = {
+        "LOOP", "SAMPLER", "PAD", "MELODY"
+    };
     const unsigned int mode = (unsigned int)display->mode;
 
     /* The rule runs the full height so the right half reads as one column. */
@@ -281,7 +284,8 @@ static void draw_status_column(MusicBoxDisplay *display)
     else if (display->armed_slots[mode] != 0u)
         (void)snprintf(state, sizeof(state), "ARM %u",
                        first_slot(display->armed_slots[mode]));
-    else if (display->mode == MUSIC_BOX_MODE_LOOP)
+    else if (display->mode == MUSIC_BOX_MODE_LOOP ||
+             display->mode == MUSIC_BOX_MODE_MELODY)
         (void)snprintf(state, sizeof(state), "S%u",
                        (unsigned int)display->selected_sample + 1u);
     else if (display->mode == MUSIC_BOX_MODE_SAMPLER)
