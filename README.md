@@ -246,7 +246,8 @@ their own line instead of sharing one row. `REC MIC Sx` identifies a sampler
 pad-hold recording; `REC MON Sx` remains visible in every mode while K3 monitor
 capture is active.
 
-Every gutter and outer margin is 3 pixels, the dots share the map's row pitch,
+The major column gutters and outer margins are 3 pixels, while the square pad
+cells use a tighter 2-pixel horizontal gap. The dots share the map's row pitch,
 and the text lines sit flush with the map's top and bottom, so the three columns
 run on one rhythm. The beat rail is present on every screen, including the
 volume overlay.

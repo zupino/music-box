@@ -36,6 +36,7 @@ static const Glyph font[] = {
     {'I', {0x00, 0x41, 0x7f, 0x41, 0x00}},
     {'L', {0x7f, 0x40, 0x40, 0x40, 0x40}},
     {'M', {0x7f, 0x02, 0x0c, 0x02, 0x7f}},
+    {'N', {0x7f, 0x02, 0x04, 0x08, 0x7f}},
     {'O', {0x3e, 0x41, 0x41, 0x41, 0x3e}},
     {'P', {0x7f, 0x09, 0x09, 0x09, 0x06}},
     {'R', {0x7f, 0x09, 0x19, 0x29, 0x46}},
@@ -132,11 +133,11 @@ static bool send_bytes(int fd, uint8_t control, const uint8_t *bytes,
  *   x 44-116  rows 0-30  mode, tempo and record/source state
  *   x 120-124 rows 0-30   the beat, four dots, the current one filled
  *
- * Every gutter is 3px and so is every outer margin. The dots share the grid's
- * row pitch and the text lines are flush with its top and bottom, so all three
- * columns run on one rhythm. Sixteen cells leave no room for digits, which is
- * no loss: the grid has the same shape as the controller, so position
- * identifies the pad.
+ * The major column gutters and outer margins are 3px; square pad cells use a
+ * tighter 2px horizontal gap. The dots share the grid's row pitch and the text
+ * lines are flush with its top and bottom, so all three columns run on one
+ * rhythm. Sixteen cells leave no room for digits, which is no loss: the grid
+ * has the same shape as the controller, so position identifies the pad.
  */
 #define PAD_CELL_WIDTH 7u
 #define PAD_CELL_HEIGHT 7u
@@ -336,7 +337,10 @@ static bool refresh(MusicBoxDisplay *display)
 {
     if (!display->enabled) return true;
     memset(display->pixels, 0, sizeof(display->pixels));
-    if (display->volume_visible) draw_volume_screen(display);
+    /* Source confirmation is most important at the imprecise K3 toggle, so a
+       temporary trim or volume overlay must never hide an active recording. */
+    if (all_recording_slots(display) != 0u) draw_status_screen(display);
+    else if (display->volume_visible) draw_volume_screen(display);
     else if (display->trim_visible) draw_trim_screen(display);
     else draw_status_screen(display);
     draw_beat_rail(display);
