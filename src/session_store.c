@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <stdint.h>
 #include <unistd.h>
 
 typedef struct {
@@ -150,7 +151,12 @@ static bool load_sample(const MusicBoxSessionStore *store, MusicBoxLoopBank *sam
         header.frames > 0u && header.frames <= slot->capacity_frames;
     if (ok) {
         const size_t frames = (size_t)header.frames;
-        ok = read_all(fd, slot->left, frames * sizeof(float)) &&
+        struct stat status;
+        const uint64_t expected = (uint64_t)sizeof(header) +
+            header.frames * 2u * (uint64_t)sizeof(float);
+        ok = fstat(fd, &status) == 0 && status.st_size >= 0 &&
+            (uint64_t)status.st_size == expected &&
+            read_all(fd, slot->left, frames * sizeof(float)) &&
              read_all(fd, slot->right, frames * sizeof(float));
         if (ok) {
             slot->recorded_frames = frames;
@@ -197,8 +203,8 @@ bool music_box_session_store_load(const MusicBoxSessionStore *store,
         if (sscanf(line, "sample %u %llu %llu %llu",
                    &index, &frames, &start, &end) == 4) {
             if (index < MUSIC_BOX_LOOP_COUNT &&
-                samples->slots[index].recorded_frames == (size_t)frames &&
-                start < end && end <= frames) {
+                frames == (unsigned long long)samples->slots[index].recorded_frames &&
+                start < end && end <= frames && end <= (unsigned long long)SIZE_MAX) {
                 samples->slots[index].trim_start = (size_t)start;
                 samples->slots[index].trim_end = (size_t)end;
             }

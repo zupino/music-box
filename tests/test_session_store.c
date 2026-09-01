@@ -86,6 +86,23 @@ int main(void)
     music_box_loop_bank_destroy(&samples);
     music_box_loop_bank_destroy(&loops);
 
+    /* A malicious or torn manifest must not exploit a 64-to-32 bit wrap to
+       install trim bounds beyond the restored sample buffer. */
+    legacy = fopen(manifest, "w");
+    assert(legacy != NULL);
+    assert(fputs("version 2\nrate 100\n"
+                 "sample 0 4294967299 4294967297 4294967299\n", legacy) >= 0);
+    assert(fclose(legacy) == 0);
+    assert(music_box_loop_bank_init(&samples, 100u, 2u, MUSIC_BOX_QUANTIZE_OFF,
+                                    MUSIC_BOX_MODE_SAMPLER, 0u, NULL));
+    assert(music_box_loop_bank_init(&loops, 100u, 2u, MUSIC_BOX_QUANTIZE_BAR,
+                                    MUSIC_BOX_MODE_LOOP, 0u, NULL));
+    assert(music_box_session_store_load(&store, &samples, &loops, NULL));
+    assert(samples.slots[0].trim_start == 0u);
+    assert(samples.slots[0].trim_end == samples.slots[0].recorded_frames);
+    music_box_loop_bank_destroy(&samples);
+    music_box_loop_bank_destroy(&loops);
+
     char command[256];
     (void)snprintf(command, sizeof(command), "rm -rf -- '%s'", directory);
     assert(system(command) == 0);

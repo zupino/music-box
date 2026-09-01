@@ -14,6 +14,11 @@ would interpret those as new edits and synchronously rewrite every restored
 sample just after JACK activation. Avoiding that redundant I/O also removes a
 large SD-card latency burst during the first seconds after boot.
 
+The loader also requires each sample file to have the exact size promised by
+its header and compares manifest frame/trim values without narrowing them to
+`size_t`. Torn, appended or maliciously oversized state is ignored instead of
+being allowed to create an out-of-bounds playback range.
+
 ## 2026-09-01 — Whole-bar assigned loops
 
 Assigned samples now start on beat one and play at most once per bar. A short
