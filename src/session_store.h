@@ -26,5 +26,7 @@ bool music_box_session_store_save_sample(const MusicBoxSessionStore *store,
 bool music_box_session_store_save_manifest(const MusicBoxSessionStore *store,
                                            const MusicBoxLoopBank *samples,
                                            const MusicBoxLoopBank *loops);
+bool music_box_session_store_delete_sample(const MusicBoxSessionStore *store,
+                                           uint8_t slot);
 
 #endif
