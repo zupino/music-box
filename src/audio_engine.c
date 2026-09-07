@@ -109,6 +109,29 @@ static void route_pad_command(MusicBoxAudioEngine *engine, const MusicBoxCommand
                                            &engine->sampler_bank);
         return;
     }
+    if (target == MUSIC_BOX_MODE_FILES) {
+        /* Release deletes one pad; holding until the normal threshold deletes
+           every recording. This delay prevents an attempted delete-all from
+           first deleting the pad under the performer's finger. */
+        if (atomic_load_explicit(&engine->persistence_busy,
+                                 memory_order_acquire))
+            return;
+        if (command->type == MUSIC_BOX_COMMAND_PAD_PRESS) {
+            engine->pad_long_gesture[command->slot] = false;
+        } else if (command->type == MUSIC_BOX_COMMAND_PAD_HOLD) {
+            engine->pad_long_gesture[command->slot] = true;
+            for (uint8_t slot = 0u; slot < MUSIC_BOX_LOOP_COUNT; ++slot)
+                (void)music_box_loop_bank_delete_sample(&engine->sampler_bank,
+                                                        &engine->loop_bank, slot);
+        } else if (!engine->pad_long_gesture[command->slot]) {
+            (void)music_box_loop_bank_delete_sample(&engine->sampler_bank,
+                                                    &engine->loop_bank,
+                                                    command->slot);
+        } else {
+            engine->pad_long_gesture[command->slot] = false;
+        }
+        return;
+    }
     MusicBoxLoopBank *bank = bank_for_mode(engine, target);
 
     if (target == MUSIC_BOX_MODE_LOOP) {

@@ -177,7 +177,8 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
         /* Only a looping or sampling pad needs its hold timed. */
         midi->pad_held[slot] = pressed &&
             (midi->mode == MUSIC_BOX_MODE_LOOP ||
-             midi->mode == MUSIC_BOX_MODE_SAMPLER);
+             midi->mode == MUSIC_BOX_MODE_SAMPLER ||
+             midi->mode == MUSIC_BOX_MODE_FILES);
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
         if (!forward) return;
     }
@@ -190,8 +191,9 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
     (void)snd_seq_event_output_direct(sequencer, event);
 }
 
-static void connect_matching_ports(snd_seq_t *sequencer, int own_client, int input_port, int output_port, const MusicBoxConfig *config)
+static bool connect_matching_ports(snd_seq_t *sequencer, int own_client, int input_port, int output_port, const MusicBoxConfig *config)
 {
+    bool synth_found = false;
     snd_seq_client_info_t *client_info = NULL;
     snd_seq_port_info_t *port_info = NULL;
     snd_seq_client_info_alloca(&client_info);
@@ -216,10 +218,28 @@ static void connect_matching_ports(snd_seq_t *sequencer, int own_client, int inp
             }
             if (is_synth && (capabilities & SND_SEQ_PORT_CAP_WRITE) != 0u && (capabilities & SND_SEQ_PORT_CAP_SUBS_WRITE) != 0u) {
                 const int result = snd_seq_connect_to(sequencer, output_port, client, port);
+                if (result >= 0) synth_found = true;
                 if (result < 0 && result != -EBUSY)
                     fprintf(stderr, "Cannot connect synthesizer %s %d:%d: %s\n", client_name, client, port, snd_strerror(result));
             }
         }
+    }
+    return synth_found;
+}
+
+static void select_soundfont_program(snd_seq_t *sequencer, int output_port,
+                                     uint8_t program)
+{
+    for (unsigned int channel = 0u; channel < 16u; ++channel) {
+        snd_seq_event_t event;
+        snd_seq_ev_clear(&event);
+        snd_seq_ev_set_source(&event, (unsigned char)output_port);
+        snd_seq_ev_set_subs(&event);
+        snd_seq_ev_set_direct(&event);
+        event.type = SND_SEQ_EVENT_PGMCHANGE;
+        event.data.control.channel = (unsigned char)channel;
+        event.data.control.value = program;
+        (void)snd_seq_event_output_direct(sequencer, &event);
     }
 }
 
@@ -247,7 +267,12 @@ static void *midi_thread(void *argument)
     while (atomic_load_explicit(&midi->running, memory_order_acquire)) {
         const uint64_t now = monotonic_milliseconds();
         if (now >= next_connection_scan) {
-            connect_matching_ports(sequencer, own_client, input_port, output_port, &midi->config);
+            const bool synth_found = connect_matching_ports(
+                sequencer, own_client, input_port, output_port, &midi->config);
+            if (synth_found) {
+                select_soundfont_program(sequencer, output_port,
+                                         midi->config.soundfont_program);
+            }
             next_connection_scan = now + 1000u;
         }
         snd_seq_event_t *event = NULL;
