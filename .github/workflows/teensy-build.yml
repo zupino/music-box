@@ -1,0 +1,23 @@
+name: Teensy build
+
+on:
+  push:
+    branches:
+      - feature/teensy-dual-target-port
+  workflow_dispatch:
+
+jobs:
+  teensy:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [teensy40, teensy41]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Arduino CLI
+        run: brew install arduino-cli
+      - name: Install PJRC Teensy toolchain and libraries
+        run: make teensy-setup
+      - name: Compile ${{ matrix.target }}
+        run: make ${{ matrix.target }}
