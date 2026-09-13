@@ -12,9 +12,17 @@ int16_t SampleStream::clamp16(int32_t v) {
   return static_cast<int16_t>(v);
 }
 
+uint64_t SampleStream::frameCounter() const {
+  AudioNoInterrupts();
+  const uint64_t value = frameCounter_;
+  AudioInterrupts();
+  return value;
+}
+
 void SampleStream::closeVoice(Voice &v) {
   AudioNoInterrupts();
   v.active = false;
+  v.pendingClose = false;
   v.count = 0;
   v.head = v.tail = 0;
   AudioInterrupts();
@@ -22,6 +30,14 @@ void SampleStream::closeVoice(Voice &v) {
   v.sourceEnded = false;
   v.sampleSlot = 0xff;
   v.owner = 0xff;
+  v.startAt = 0;
+  v.stopAt = UINT64_MAX;
+}
+
+void SampleStream::stopVoiceFromAudio(Voice &v) {
+  v.active = false;
+  v.pendingClose = true;
+  v.count = 0;
 }
 
 int8_t SampleStream::chooseVoice(bool loop, uint8_t owner) {
@@ -29,14 +45,22 @@ int8_t SampleStream::chooseVoice(bool loop, uint8_t owner) {
     closeVoice(voices_[owner]);
     return static_cast<int8_t>(owner);
   }
-  for (uint8_t i = 0; i < kVoiceCount; ++i) if (!voices_[i].active) return i;
-  for (uint8_t i = 0; i < kVoiceCount; ++i) if (!voices_[i].looping) { closeVoice(voices_[i]); return i; }
+  for (uint8_t i = 0; i < kVoiceCount; ++i)
+    if (!voices_[i].active && !voices_[i].pendingClose) return i;
+  for (uint8_t i = 0; i < kVoiceCount; ++i)
+    if (voices_[i].active && !voices_[i].looping) { closeVoice(voices_[i]); return i; }
   closeVoice(voices_[0]);
   return 0;
 }
 
 bool SampleStream::play(uint8_t sampleSlot, const SampleMeta &meta, float rate,
                         bool loop, uint8_t owner, uint8_t gain) {
+  return playAt(sampleSlot, meta, frameCounter(), rate, loop, owner, gain);
+}
+
+bool SampleStream::playAt(uint8_t sampleSlot, const SampleMeta &meta,
+                          uint64_t startFrame, float rate, bool loop,
+                          uint8_t owner, uint8_t gain) {
   if (!storage_ || !meta.present || meta.frames == 0) return false;
   if (!(rate > 0.05f && rate < 8.0f)) return false;
   const uint32_t start = min(meta.trimStart, meta.frames - 1);
@@ -58,16 +82,33 @@ bool SampleStream::play(uint8_t sampleSlot, const SampleMeta &meta, float rate,
   v.sourceFrame = start;
   v.phaseQ16 = 0;
   v.rateQ16 = static_cast<uint32_t>(rate * 65536.0f + 0.5f);
+  v.startAt = startFrame;
+  v.stopAt = UINT64_MAX;
   v.head = v.tail = v.count = 0;
   v.sourceEnded = false;
+  v.pendingClose = false;
   v.active = true;
 
   for (uint8_t n = 0; n < 3 && v.count < kRingFrames / 2; ++n) refill(v);
-  return v.count >= 2;
+  if (v.count < 2) { closeVoice(v); return false; }
+  return true;
 }
 
 void SampleStream::stopOwner(uint8_t owner) {
   for (auto &v : voices_) if (v.active && v.owner == owner) closeVoice(v);
+}
+
+void SampleStream::stopOwnerAt(uint8_t owner, uint64_t stopFrame) {
+  const uint64_t now = frameCounter();
+  for (auto &v : voices_) {
+    if (!v.active || v.owner != owner) continue;
+    if (stopFrame <= now) closeVoice(v);
+    else {
+      AudioNoInterrupts();
+      v.stopAt = stopFrame;
+      AudioInterrupts();
+    }
+  }
 }
 
 void SampleStream::stopAll() {
@@ -115,6 +156,7 @@ bool SampleStream::refill(Voice &v) {
 
 void SampleStream::service() {
   for (auto &v : voices_) {
+    if (v.pendingClose) { closeVoice(v); continue; }
     if (!v.active) continue;
     for (uint8_t n = 0; n < 2; ++n) if (!refill(v)) break;
     uint16_t count; bool ended;
@@ -130,15 +172,20 @@ void SampleStream::update() {
     if (left) release(left);
     if (right) release(right);
     ++underruns_;
+    AudioNoInterrupts(); frameCounter_ += AUDIO_BLOCK_SAMPLES; AudioInterrupts();
     return;
   }
   memset(left->data, 0, sizeof(left->data));
   memset(right->data, 0, sizeof(right->data));
 
+  const uint64_t blockStart = frameCounter_;
   for (uint16_t out = 0; out < AUDIO_BLOCK_SAMPLES; ++out) {
+    const uint64_t frame = blockStart + out;
     int32_t mixL = 0, mixR = 0;
     for (auto &v : voices_) {
       if (!v.active) continue;
+      if (frame < v.startAt) continue;
+      if (frame >= v.stopAt) { stopVoiceFromAudio(v); continue; }
       if (v.count < 2) { if (!v.sourceEnded) ++underruns_; continue; }
 
       const uint16_t i0 = v.head;
@@ -164,6 +211,7 @@ void SampleStream::update() {
     right->data[out] = clamp16(mixR);
   }
 
+  frameCounter_ = blockStart + AUDIO_BLOCK_SAMPLES;
   transmit(left, 0); transmit(right, 1);
   release(left); release(right);
 }
