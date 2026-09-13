@@ -7,9 +7,9 @@ CPPFLAGS += -D_POSIX_C_SOURCE=200809L -Isrc
 WARNINGS = -Wall -Wextra -Wpedantic -Wconversion -Wshadow
 LDLIBS = -ljack -lasound -lpthread -lm
 
-# Teensy builds deliberately use the PJRC board package through arduino-cli
-# rather than duplicating its arm-none-eabi compiler, core, linker and library
-# recipes here.  Make remains the project's single build entry point.
+# Teensy builds use PJRC's board package through arduino-cli rather than
+# duplicating its arm-none-eabi compiler/core/linker recipes. Make remains the
+# project's build entry point on Linux and macOS.
 ARDUINO_CLI ?= arduino-cli
 TEENSY_CORE_URL ?= https://www.pjrc.com/teensy/package_teensy_index.json
 TEENSY_CORE ?= teensy:avr
@@ -45,7 +45,7 @@ TEST_BINS = \
 	build/test_session_store \
 	build/test_volume
 
-.PHONY: all rpi clean install test teensy-setup teensy40 teensy41 teensy40-upload teensy41-upload
+.PHONY: all rpi clean install test teensy-check teensy-setup teensy40 teensy41 teensy40-upload teensy41-upload
 
 all: rpi
 rpi: music-box
@@ -92,31 +92,47 @@ test: $(TEST_BINS)
 		./$$test_binary || exit 1; \
 	done
 
-# One-time host setup. arduino-cli downloads PJRC's Teensy core, which includes
-# the Teensy ARM GCC toolchain and bundled Audio/USBHost/SD libraries. The two
-# Adafruit libraries are the only additional firmware dependencies at present.
-teensy-setup:
+# On macOS install the only host prerequisite with:
+#   brew install arduino-cli
+# Then run `make teensy-setup`. PJRC's core package downloads the ARM GCC
+# compiler, linker, Teensy core, upload tools and bundled Audio/USBHost/SD libs.
+teensy-check:
+	@command -v $(ARDUINO_CLI) >/dev/null || { \
+		echo "arduino-cli not found."; \
+		echo "macOS: brew install arduino-cli"; \
+		exit 2; \
+	}
+	@$(ARDUINO_CLI) version
+	@echo "Installed Teensy cores:"
+	@$(ARDUINO_CLI) core list | grep teensy || true
+	@echo "Detected boards:"
+	@$(ARDUINO_CLI) board list || true
+
+teensy-setup: teensy-check
 	$(ARDUINO_CLI) core update-index --additional-urls $(TEENSY_CORE_URL)
 	$(ARDUINO_CLI) core install $(TEENSY_CORE) --additional-urls $(TEENSY_CORE_URL)
 	$(ARDUINO_CLI) lib install "Adafruit GFX Library" "Adafruit SSD1306"
+	@echo "Teensy environment ready. Try: make teensy40"
 
 teensy40:
+	@command -v $(ARDUINO_CLI) >/dev/null || { echo "Run: make teensy-setup"; exit 2; }
 	mkdir -p $(TEENSY_BUILD_DIR)/40
 	$(ARDUINO_CLI) compile --fqbn $(TEENSY40_FQBN) --build-path $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
 
 teensy41:
+	@command -v $(ARDUINO_CLI) >/dev/null || { echo "Run: make teensy-setup"; exit 2; }
 	mkdir -p $(TEENSY_BUILD_DIR)/41
 	$(ARDUINO_CLI) compile --fqbn $(TEENSY41_FQBN) --build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
-# Set PORT=/dev/ttyACM0 (or the detected device) when command-line upload is
-# supported by the local Teensy/USB setup. The physical Program button remains
-# available when a board is not in a software-rebootable state.
+# PORT is normally shown by `arduino-cli board list` after the Teensy is
+# connected over USB. If automatic reboot cannot reach the bootloader, press
+# the Teensy's Program button once and repeat the upload command.
 teensy40-upload: teensy40
-	@test -n "$(PORT)" || (echo "Set PORT=<Teensy port>"; exit 2)
+	@test -n "$(PORT)" || (echo "Set PORT=<port from: arduino-cli board list>"; exit 2)
 	$(ARDUINO_CLI) upload -p $(PORT) --fqbn $(TEENSY40_FQBN) --input-dir $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
 
 teensy41-upload: teensy41
-	@test -n "$(PORT)" || (echo "Set PORT=<Teensy port>"; exit 2)
+	@test -n "$(PORT)" || (echo "Set PORT=<port from: arduino-cli board list>"; exit 2)
 	$(ARDUINO_CLI) upload -p $(PORT) --fqbn $(TEENSY41_FQBN) --input-dir $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
 install: music-box
