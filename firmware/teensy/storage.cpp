@@ -12,10 +12,19 @@ bool Storage::begin() {
 #if defined(ARDUINO_TEENSY41)
   if (!SD.begin(BUILTIN_SDCARD)) return false;
 #else
-  // Teensy 4.0 has no onboard SDIO socket; use the Audio Adapter/external SPI SD.
   if (!SD.begin(kAudioShieldSdCs)) return false;
 #endif
   if (!SD.exists("/musicbox")) SD.mkdir("/musicbox");
+
+  // Recover only complete atomic manifest writes; incomplete sample temp files
+  // are never referenced and are safe to discard after a reset/power loss.
+  if (!SD.exists("/musicbox/session.txt") && SD.exists("/musicbox/session.tmp"))
+    SD.rename("/musicbox/session.tmp", "/musicbox/session.txt");
+  else
+    SD.remove("/musicbox/session.tmp");
+  for (uint8_t i=0;i<kSlotCount;++i) {
+    char p[32]; samplePath(i,p,sizeof(p),true); SD.remove(p);
+  }
   return true;
 }
 
@@ -36,10 +45,25 @@ bool Storage::loadManifest(SampleMeta s[kSlotCount], uint8_t a[kSlotCount]) {
   File f=SD.open("/musicbox/session.txt",FILE_READ); if(!f) return false;
   while(f.available()) {
     String line=f.readStringUntil('\n'); int slot, assigned; unsigned long frames,ts,te;
-    if(sscanf(line.c_str(),"S %d %lu %lu %lu",&slot,&frames,&ts,&te)==4 && slot>=0 && slot<kSlotCount) { s[slot].present=true;s[slot].frames=frames;s[slot].trimStart=ts;s[slot].trimEnd=te; }
-    else if(sscanf(line.c_str(),"A %d %d",&slot,&assigned)==2 && slot>=0 && slot<kSlotCount && assigned>=0 && assigned<kSlotCount) a[slot]=assigned;
-  } f.close(); return true;
+    if(sscanf(line.c_str(),"S %d %lu %lu %lu",&slot,&frames,&ts,&te)==4 && slot>=0 && slot<kSlotCount) {
+      char p[32]; samplePath(static_cast<uint8_t>(slot),p,sizeof(p)); File sample=SD.open(p,FILE_READ);
+      if(sample){
+        const uint32_t fileFrames=static_cast<uint32_t>(sample.size()/4u);sample.close();
+        if(fileFrames){
+          const uint32_t safeFrames=min<uint32_t>(static_cast<uint32_t>(frames),fileFrames);
+          s[slot].present=true;s[slot].frames=safeFrames;
+          s[slot].trimStart=min<uint32_t>(static_cast<uint32_t>(ts),safeFrames-1);
+          s[slot].trimEnd=min<uint32_t>(static_cast<uint32_t>(te),safeFrames);
+          if(s[slot].trimEnd<=s[slot].trimStart)s[slot].trimEnd=safeFrames;
+        }
+      }
+    } else if(sscanf(line.c_str(),"A %d %d",&slot,&assigned)==2 && slot>=0 && slot<kSlotCount && assigned>=0 && assigned<kSlotCount) a[slot]=assigned;
+  }
+  f.close();
+  for(uint8_t i=0;i<kSlotCount;++i) if(a[i]<kSlotCount && !s[a[i]].present) a[i]=0xff;
+  return true;
 }
+
 bool Storage::saveManifest(const SampleMeta s[kSlotCount], const uint8_t a[kSlotCount]) {
   SD.remove("/musicbox/session.tmp"); File f=SD.open("/musicbox/session.tmp",FILE_WRITE); if(!f)return false;
   f.println("MUSICBOX_TEENSY_SESSION 1");
