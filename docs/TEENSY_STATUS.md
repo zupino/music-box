@@ -19,7 +19,7 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [x] MPD218 USB-host MIDI callbacks and original 16-pad note map.
 - [x] Five modes and K2/K4/K5/K6/K1/K3 CC routing.
 - [x] SGTL5000 Audio Adapter bring-up and stereo line I/O graph.
-- [x] SSD1306 I2C bring-up and basic mode/sample/beat/record display.
+- [x] SSD1306 I2C bring-up and Pi-style 4x4 state grid, pending/record states, beat rail and volume overlay.
 - [x] SD session directory and interleaved 16-bit stereo PCM sample files.
 - [x] Bounded 16-voice SD sample streamer; no SD reads inside `AudioStream::update()`.
 - [x] Trim-aware sample playback.
@@ -30,7 +30,7 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [x] 10-second recording limit matching current project default.
 - [x] FILES mode single/all deletion state handling.
 - [x] Loop-to-sample assignment metadata and trim metadata.
-- [x] Bar-boundary loop start/stop state handling.
+- [x] Audio-frame scheduled bar-quantized loop start/stop; SD data is pre-buffered and the actual transition happens inside the audio update timeline rather than `millis()`/`loop()` timing.
 - [x] Crash-tolerant temp/rename manifest handling and stale sample-temp cleanup.
 - [x] Manifest validation against actual sample-file length on restore.
 - [x] Fixed-memory stereo NLMS AEC using exact final speaker mix as reference.
@@ -41,8 +41,6 @@ This file is intentionally strict: a box is checked only when implementation exi
 ## Still required before software handoff
 - [ ] Confirm Teensy 4.0 compile in CI/local PJRC toolchain.
 - [ ] Confirm Teensy 4.1 compile in CI/local PJRC toolchain.
-- [ ] Replace millisecond transport boundary scheduling with audio-frame/sample-accurate scheduling.
-- [ ] Full OLED parity: Pi-style 4x4 state grid, pending/armed states, beat rail and volume overlay.
 - [ ] Decide whether the embedded synth backend is sufficient parity or add an offline SF2-to-embedded-instrument conversion workflow.
 - [ ] Expose underrun/dropped-block diagnostics on serial/OLED for stress testing.
 - [ ] Review and fix any compiler warnings/errors found by the PJRC toolchain.
