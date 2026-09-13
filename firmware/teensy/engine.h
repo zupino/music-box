@@ -5,11 +5,12 @@
 #include "storage.h"
 #include "sample_stream.h"
 #include "recorder.h"
+#include "instrument.h"
 
 namespace musicbox {
 class Engine {
  public:
-  bool begin(Storage *storage, SampleStream *player, StereoRecorder *recorder);
+  bool begin(Storage *storage, SampleStream *player, StereoRecorder *recorder, BassInstrument *instrument);
   void service();
   void noteOn(uint8_t note, uint8_t velocity);
   void noteOff(uint8_t note);
@@ -23,6 +24,7 @@ class Engine {
   Storage *storage_=nullptr;
   SampleStream *player_=nullptr;
   StereoRecorder *recorder_=nullptr;
+  BassInstrument *instrument_=nullptr;
   SampleMeta samples_[kSlotCount];
   uint8_t assignments_[kSlotCount];
   Mode mode_=Mode::Pad;
