@@ -47,7 +47,7 @@ TEST_BINS = \
 	build/test_session_store \
 	build/test_volume
 
-.PHONY: all rpi clean install test teensy-check teensy-setup teensy40 teensy41 teensy40-upload teensy41-upload
+.PHONY: all rpi clean install test teensy-check teensy-setup teensy-ports teensy40 teensy41 teensy40-upload teensy41-upload
 
 all: rpi
 rpi: music-box
@@ -107,7 +107,7 @@ teensy-check:
 	@$(ARDUINO_CLI) version
 	@echo "Installed Teensy cores:"
 	@$(ARDUINO_CLI) core list | grep teensy || true
-	@echo "Detected boards:"
+	@echo "Arduino-discovered boards:"
 	@$(ARDUINO_CLI) board list || true
 
 teensy-setup: teensy-check
@@ -115,6 +115,17 @@ teensy-setup: teensy-check
 	$(ARDUINO_CLI) core install $(TEENSY_CORE) --additional-urls $(TEENSY_CORE_URL)
 	$(ARDUINO_CLI) lib install "Adafruit GFX Library" "Adafruit SSD1306"
 	@echo "Teensy environment ready. Try: make teensy40"
+
+# PJRC's teensy_ports reports both the physical Teensy USB location (usb:...)
+# and, when applicable, its /dev/cu.* serial device. The physical usb: address
+# is the identity teensy_post_compile expects when portprotocol=Teensy.
+teensy-ports:
+	@TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY40_FQBN) --show-properties 2>/dev/null | sed -n 's/^tools\.teensyloader\.cmd\.path=//p' | head -n 1 )"; \
+	if [ -z "$$TOOLS" ]; then \
+		TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY40_FQBN) --show-properties 2>/dev/null | sed -n 's/^runtime\.tools\.teensy-tools\.path=//p' | head -n 1 )"; \
+	fi; \
+	test -x "$$TOOLS/teensy_ports" || { echo "Could not locate PJRC teensy_ports. Run: make teensy-setup"; exit 2; }; \
+	"$$TOOLS/teensy_ports" -L
 
 teensy40:
 	@command -v $(ARDUINO_CLI) >/dev/null || { echo "Run: make teensy-setup"; exit 2; }
@@ -130,17 +141,16 @@ teensy41:
 		--build-property compiler.cpp.extra_flags="-DMUSIC_BOX_SD_BUILTIN=1" \
 		--build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
-# Teensy discovery normally reports a custom physical USB address such as
-# usb:210000 on macOS. Arduino CLI 1.x can list this address successfully yet
-# fail to resolve it again during `arduino-cli upload`. Avoid that extra
-# metadata lookup and invoke PJRC's own uploader recipe directly, exactly as
-# the Teensy platform.txt does. The PJRC tool path is queried from the installed
-# board package rather than hard-coded to ~/Library/Arduino15 or a core version.
+# On macOS the same Teensy can have two names:
+#   usb:210000                 physical Teensy port (use for upload)
+#   /dev/cu.usbmodem...        USB Serial device (use for serial monitoring)
+# The upload targets query PJRC's teensy_ports -L and resolve this distinction.
+# With exactly one Teensy connected PORT may be omitted. If PORT is supplied as
+# /dev/cu.* we map it back to the corresponding usb: physical location.
 #
-# If automatic reboot cannot reach the running sketch, start the target and
-# press the Teensy's physical Program button once while the loader is waiting.
+# teensy_post_compile intentionally launches/controls Teensy Loader.app on
+# macOS. Do not start a second standalone copy; the one started here is normal.
 teensy40-upload: teensy40
-	@test -n "$(PORT)" || (echo "Set PORT=<Teensy address from: arduino-cli board list>, e.g. usb:210000"; exit 2)
 	@test -f "$(TEENSY_BUILD_DIR)/40/teensy.ino.hex" || (echo "Missing $(TEENSY_BUILD_DIR)/40/teensy.ino.hex; run make teensy40"; exit 2)
 	@TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY40_FQBN) --show-properties 2>/dev/null | sed -n 's/^tools\.teensyloader\.cmd\.path=//p' | head -n 1 )"; \
 	if [ -z "$$TOOLS" ]; then \
@@ -148,19 +158,42 @@ teensy40-upload: teensy40
 	fi; \
 	test -n "$$TOOLS" || { echo "Could not locate PJRC teensy-tools. Run: make teensy-setup"; exit 2; }; \
 	test -x "$$TOOLS/teensy_post_compile" || { echo "Missing $$TOOLS/teensy_post_compile"; exit 2; }; \
-	echo "Uploading $(TEENSY_BUILD_DIR)/40/teensy.ino.hex to Teensy at $(PORT)"; \
+	test -x "$$TOOLS/teensy_ports" || { echo "Missing $$TOOLS/teensy_ports"; exit 2; }; \
+	PORTS="$$( "$$TOOLS/teensy_ports" -L 2>/dev/null || true )"; \
+	REQUESTED='$(PORT)'; \
+	RESOLVED=''; \
+	if [ -z "$$REQUESTED" ]; then \
+		COUNT="$$(printf '%s\n' "$$PORTS" | awk '$$1 ~ /^usb:/ {n++} END {print n+0}')"; \
+		if [ "$$COUNT" -eq 1 ]; then \
+			RESOLVED="$$(printf '%s\n' "$$PORTS" | awk '$$1 ~ /^usb:/ {print $$1; exit}')"; \
+		else \
+			echo "Expected exactly one Teensy, found $$COUNT. Connected Teensy ports:"; \
+			printf '%s\n' "$$PORTS"; \
+			echo "Retry with PORT=usb:... from the first column above."; \
+			exit 2; \
+		fi; \
+	elif printf '%s' "$$REQUESTED" | grep -q '^usb:'; then \
+		RESOLVED="$$REQUESTED"; \
+	else \
+		RESOLVED="$$(printf '%s\n' "$$PORTS" | awk -v p="$$REQUESTED" 'index($$0,p) && $$1 ~ /^usb:/ {print $$1; exit}')"; \
+		if [ -z "$$RESOLVED" ]; then \
+			echo "PORT=$$REQUESTED is a serial/device name, not a Teensy physical upload port, and it could not be mapped."; \
+			echo "PJRC teensy_ports reports:"; printf '%s\n' "$$PORTS"; \
+			exit 2; \
+		fi; \
+	fi; \
+	echo "Uploading $(TEENSY_BUILD_DIR)/40/teensy.ino.hex to Teensy at $$RESOLVED"; \
 	"$$TOOLS/teensy_post_compile" \
 		"-file=teensy.ino" \
 		"-path=$(abspath $(TEENSY_BUILD_DIR)/40)" \
 		"-tools=$$TOOLS" \
 		"-board=$(TEENSY40_BOARD)" \
 		-reboot \
-		"-port=$(PORT)" \
+		"-port=$$RESOLVED" \
 		"-portlabel=Teensy 4.0" \
 		"-portprotocol=Teensy"
 
 teensy41-upload: teensy41
-	@test -n "$(PORT)" || (echo "Set PORT=<Teensy address from: arduino-cli board list>, e.g. usb:210000"; exit 2)
 	@test -f "$(TEENSY_BUILD_DIR)/41/teensy.ino.hex" || (echo "Missing $(TEENSY_BUILD_DIR)/41/teensy.ino.hex; run make teensy41"; exit 2)
 	@TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY41_FQBN) --show-properties 2>/dev/null | sed -n 's/^tools\.teensyloader\.cmd\.path=//p' | head -n 1 )"; \
 	if [ -z "$$TOOLS" ]; then \
@@ -168,14 +201,38 @@ teensy41-upload: teensy41
 	fi; \
 	test -n "$$TOOLS" || { echo "Could not locate PJRC teensy-tools. Run: make teensy-setup"; exit 2; }; \
 	test -x "$$TOOLS/teensy_post_compile" || { echo "Missing $$TOOLS/teensy_post_compile"; exit 2; }; \
-	echo "Uploading $(TEENSY_BUILD_DIR)/41/teensy.ino.hex to Teensy at $(PORT)"; \
+	test -x "$$TOOLS/teensy_ports" || { echo "Missing $$TOOLS/teensy_ports"; exit 2; }; \
+	PORTS="$$( "$$TOOLS/teensy_ports" -L 2>/dev/null || true )"; \
+	REQUESTED='$(PORT)'; \
+	RESOLVED=''; \
+	if [ -z "$$REQUESTED" ]; then \
+		COUNT="$$(printf '%s\n' "$$PORTS" | awk '$$1 ~ /^usb:/ {n++} END {print n+0}')"; \
+		if [ "$$COUNT" -eq 1 ]; then \
+			RESOLVED="$$(printf '%s\n' "$$PORTS" | awk '$$1 ~ /^usb:/ {print $$1; exit}')"; \
+		else \
+			echo "Expected exactly one Teensy, found $$COUNT. Connected Teensy ports:"; \
+			printf '%s\n' "$$PORTS"; \
+			echo "Retry with PORT=usb:... from the first column above."; \
+			exit 2; \
+		fi; \
+	elif printf '%s' "$$REQUESTED" | grep -q '^usb:'; then \
+		RESOLVED="$$REQUESTED"; \
+	else \
+		RESOLVED="$$(printf '%s\n' "$$PORTS" | awk -v p="$$REQUESTED" 'index($$0,p) && $$1 ~ /^usb:/ {print $$1; exit}')"; \
+		if [ -z "$$RESOLVED" ]; then \
+			echo "PORT=$$REQUESTED is a serial/device name, not a Teensy physical upload port, and it could not be mapped."; \
+			echo "PJRC teensy_ports reports:"; printf '%s\n' "$$PORTS"; \
+			exit 2; \
+		fi; \
+	fi; \
+	echo "Uploading $(TEENSY_BUILD_DIR)/41/teensy.ino.hex to Teensy at $$RESOLVED"; \
 	"$$TOOLS/teensy_post_compile" \
 		"-file=teensy.ino" \
 		"-path=$(abspath $(TEENSY_BUILD_DIR)/41)" \
 		"-tools=$$TOOLS" \
 		"-board=$(TEENSY41_BOARD)" \
 		-reboot \
-		"-port=$(PORT)" \
+		"-port=$$RESOLVED" \
 		"-portlabel=Teensy 4.1" \
 		"-portprotocol=Teensy"
 
