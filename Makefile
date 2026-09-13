@@ -15,7 +15,8 @@ TEENSY_CORE_URL ?= https://www.pjrc.com/teensy/package_teensy_index.json
 TEENSY_CORE ?= teensy:avr
 TEENSY40_FQBN ?= teensy:avr:teensy40
 TEENSY41_FQBN ?= teensy:avr:teensy41
-TEENSY_PORT_PROTOCOL ?= teensy
+TEENSY40_BOARD ?= TEENSY40
+TEENSY41_BOARD ?= TEENSY41
 TEENSY_SKETCH := firmware/teensy
 TEENSY_BUILD_DIR := build/teensy
 
@@ -129,21 +130,54 @@ teensy41:
 		--build-property compiler.cpp.extra_flags="-DMUSIC_BOX_SD_BUILTIN=1" \
 		--build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
-# Teensy discovery normally reports a custom port such as `usb:210000` with
-# protocol `teensy`; it does not have to be a /dev/cu.* serial pathname.
-# Upload from the exact --build-path produced by the compile target. If
-# automatic reboot cannot reach the bootloader, press Program once and retry.
+# Teensy discovery normally reports a custom physical USB address such as
+# usb:210000 on macOS. Arduino CLI 1.x can list this address successfully yet
+# fail to resolve it again during `arduino-cli upload`. Avoid that extra
+# metadata lookup and invoke PJRC's own uploader recipe directly, exactly as
+# the Teensy platform.txt does. The PJRC tool path is queried from the installed
+# board package rather than hard-coded to ~/Library/Arduino15 or a core version.
+#
+# If automatic reboot cannot reach the running sketch, start the target and
+# press the Teensy's physical Program button once while the loader is waiting.
 teensy40-upload: teensy40
-	@test -n "$(PORT)" || (echo "Set PORT=<Port column from: arduino-cli board list>"; exit 2)
+	@test -n "$(PORT)" || (echo "Set PORT=<Teensy address from: arduino-cli board list>, e.g. usb:210000"; exit 2)
 	@test -f "$(TEENSY_BUILD_DIR)/40/teensy.ino.hex" || (echo "Missing $(TEENSY_BUILD_DIR)/40/teensy.ino.hex; run make teensy40"; exit 2)
-	$(ARDUINO_CLI) upload -p "$(PORT)" -l $(TEENSY_PORT_PROTOCOL) \
-		--fqbn $(TEENSY40_FQBN) --build-path $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
+	@TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY40_FQBN) --show-properties 2>/dev/null | sed -n 's/^tools\.teensyloader\.cmd\.path=//p' | head -n 1 )"; \
+	if [ -z "$$TOOLS" ]; then \
+		TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY40_FQBN) --show-properties 2>/dev/null | sed -n 's/^runtime\.tools\.teensy-tools\.path=//p' | head -n 1 )"; \
+	fi; \
+	test -n "$$TOOLS" || { echo "Could not locate PJRC teensy-tools. Run: make teensy-setup"; exit 2; }; \
+	test -x "$$TOOLS/teensy_post_compile" || { echo "Missing $$TOOLS/teensy_post_compile"; exit 2; }; \
+	echo "Uploading $(TEENSY_BUILD_DIR)/40/teensy.ino.hex to Teensy at $(PORT)"; \
+	"$$TOOLS/teensy_post_compile" \
+		"-file=teensy.ino" \
+		"-path=$(abspath $(TEENSY_BUILD_DIR)/40)" \
+		"-tools=$$TOOLS" \
+		"-board=$(TEENSY40_BOARD)" \
+		-reboot \
+		"-port=$(PORT)" \
+		"-portlabel=Teensy 4.0" \
+		"-portprotocol=Teensy"
 
 teensy41-upload: teensy41
-	@test -n "$(PORT)" || (echo "Set PORT=<Port column from: arduino-cli board list>"; exit 2)
+	@test -n "$(PORT)" || (echo "Set PORT=<Teensy address from: arduino-cli board list>, e.g. usb:210000"; exit 2)
 	@test -f "$(TEENSY_BUILD_DIR)/41/teensy.ino.hex" || (echo "Missing $(TEENSY_BUILD_DIR)/41/teensy.ino.hex; run make teensy41"; exit 2)
-	$(ARDUINO_CLI) upload -p "$(PORT)" -l $(TEENSY_PORT_PROTOCOL) \
-		--fqbn $(TEENSY41_FQBN) --build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
+	@TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY41_FQBN) --show-properties 2>/dev/null | sed -n 's/^tools\.teensyloader\.cmd\.path=//p' | head -n 1 )"; \
+	if [ -z "$$TOOLS" ]; then \
+		TOOLS="$$( $(ARDUINO_CLI) board details -b $(TEENSY41_FQBN) --show-properties 2>/dev/null | sed -n 's/^runtime\.tools\.teensy-tools\.path=//p' | head -n 1 )"; \
+	fi; \
+	test -n "$$TOOLS" || { echo "Could not locate PJRC teensy-tools. Run: make teensy-setup"; exit 2; }; \
+	test -x "$$TOOLS/teensy_post_compile" || { echo "Missing $$TOOLS/teensy_post_compile"; exit 2; }; \
+	echo "Uploading $(TEENSY_BUILD_DIR)/41/teensy.ino.hex to Teensy at $(PORT)"; \
+	"$$TOOLS/teensy_post_compile" \
+		"-file=teensy.ino" \
+		"-path=$(abspath $(TEENSY_BUILD_DIR)/41)" \
+		"-tools=$$TOOLS" \
+		"-board=$(TEENSY41_BOARD)" \
+		-reboot \
+		"-port=$(PORT)" \
+		"-portlabel=Teensy 4.1" \
+		"-portprotocol=Teensy"
 
 install: music-box
 	install -d "$(DESTDIR)$(BINDIR)"
