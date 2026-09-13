@@ -121,6 +121,8 @@ static void drawStatus(){
   if(engine.recording()){
     oled.print("REC ");oled.print(engine.recordingMonitor()?"MON":"MIC");
     const uint8_t slot=engine.recordingSlot();if(slot<16){oled.print(" ");oled.print(slot+1);}
+  }else if(engine.underruns()>0 || engine.droppedRecordBlocks()>0){
+    oled.print("U");oled.print(engine.underruns());oled.print(" D");oled.print(engine.droppedRecordBlocks());
   }else if(engine.mode()==Mode::Loop || engine.mode()==Mode::Melody || engine.mode()==Mode::Sampler){
     oled.print("S");oled.print(engine.selectedSample()+1);
   }else if(!sdReady){
@@ -142,6 +144,17 @@ static void drawUi(){
   drawPadGrid();drawStatus();drawBeatRail();
   if(int32_t(volumeOverlayUntil-millis())>0)drawVolumeOverlay();
   oled.display();
+}
+
+static void serviceDiagnostics(){
+  static uint32_t next=0;
+  const uint32_t now=millis();
+  if(int32_t(now-next)<0)return;
+  next=now+2000;
+  Serial.print("music-box diag: underruns=");Serial.print(engine.underruns());
+  Serial.print(" dropped_record_blocks=");Serial.print(engine.droppedRecordBlocks());
+  Serial.print(" audio_mem=");Serial.print(AudioMemoryUsage());
+  Serial.print(" audio_mem_max=");Serial.println(AudioMemoryUsageMax());
 }
 
 void setup(){
@@ -167,5 +180,6 @@ void loop(){
   while(midi.read()){}
   engine.service();
   drawUi();
+  serviceDiagnostics();
   yield();
 }
