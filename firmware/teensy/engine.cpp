@@ -7,11 +7,55 @@ namespace musicbox {
 bool Engine::begin(Storage *s, SampleStream *player, StereoRecorder *recorder, BassInstrument *instrument) {
   storage_=s; player_=player; recorder_=recorder; instrument_=instrument;
   storage_->loadManifest(samples_,assignments_);
-  nextBeatMs_=millis()+uint32_t(60000.0f/kDefaultBpm);
   return true;
 }
 
 void Engine::persist(){ storage_->saveManifest(samples_,assignments_); }
+
+uint64_t Engine::beatFrames() const {
+  return static_cast<uint64_t>((AUDIO_SAMPLE_RATE_EXACT * 60.0f / kDefaultBpm) + 0.5f);
+}
+
+uint64_t Engine::barFrames() const {
+  return beatFrames() * kBeatsPerBar;
+}
+
+uint64_t Engine::nextBarFrame() const {
+  if(!player_) return 0;
+  const uint64_t now=player_->frameCounter();
+  const uint64_t bar=barFrames();
+  return ((now / bar) + 1u) * bar;
+}
+
+uint8_t Engine::beat() const {
+  if(!player_) return 0;
+  const uint64_t beatLength=beatFrames();
+  if(!beatLength) return 0;
+  return static_cast<uint8_t>((player_->frameCounter()/beatLength)%kBeatsPerBar);
+}
+
+uint8_t Engine::recordingSlot() const {
+  for(uint8_t i=0;i<kSlotCount;++i) if(recording_[i]) return i;
+  return 0xff;
+}
+
+uint16_t Engine::loadedMask() const {
+  uint16_t mask=0;
+  for(uint8_t i=0;i<kSlotCount;++i) if(samples_[i].present) mask|=uint16_t(1u<<i);
+  return mask;
+}
+
+uint16_t Engine::playingLoopMask() const {
+  uint16_t mask=0;
+  for(uint8_t i=0;i<kSlotCount;++i) if(loopActive_[i]) mask|=uint16_t(1u<<i);
+  return mask;
+}
+
+uint16_t Engine::pendingLoopMask() const {
+  uint16_t mask=0;
+  for(uint8_t i=0;i<kSlotCount;++i) if(loopTogglePending_[i]) mask|=uint16_t(1u<<i);
+  return mask;
+}
 
 void Engine::noteOn(uint8_t note,uint8_t velocity){
   int8_t slot=noteToSlot(note);
@@ -33,9 +77,23 @@ void Engine::noteOff(uint8_t note){
 
 void Engine::shortPress(uint8_t slot){
   switch(mode_){
-    case Mode::Loop:
-      loopTogglePending_[slot]=true;
+    case Mode::Loop: {
+      if(!player_ || loopTogglePending_[slot]) break;
+      const uint64_t boundary=nextBarFrame();
+      loopBoundaryFrame_[slot]=boundary;
+      if(loopActive_[slot]) {
+        player_->stopOwnerAt(slot,boundary);
+        loopTargetActive_[slot]=false;
+        loopTogglePending_[slot]=true;
+      } else {
+        const uint8_t sample=assignments_[slot]<kSlotCount?assignments_[slot]:slot;
+        if(samples_[sample].present && player_->playAt(sample,samples_[sample],boundary,1.0f,true,slot)) {
+          loopTargetActive_[slot]=true;
+          loopTogglePending_[slot]=true;
+        }
+      }
       break;
+    }
     case Mode::Sampler:
       if(samples_[slot].present)triggerSample(slot);
       break;
@@ -106,30 +164,23 @@ void Engine::deleteAll(){
   persist();
 }
 
-void Engine::applyLoopBoundary(){
+void Engine::serviceLoopBoundaries(uint64_t nowFrame){
   for(uint8_t slot=0;slot<kSlotCount;++slot){
-    if(!loopTogglePending_[slot])continue;
+    if(!loopTogglePending_[slot] || nowFrame<loopBoundaryFrame_[slot]) continue;
+    loopActive_[slot]=loopTargetActive_[slot];
     loopTogglePending_[slot]=false;
-    if(loopActive_[slot]){
-      player_->stopOwner(slot);loopActive_[slot]=false;continue;
-    }
-    uint8_t sample=assignments_[slot]<kSlotCount?assignments_[slot]:slot;
-    if(samples_[sample].present && player_->play(sample,samples_[sample],1.0f,true,slot)) loopActive_[slot]=true;
   }
 }
 
 void Engine::service(){
   if(recorder_) recorder_->service();
-  if(player_) player_->service();
+  if(player_) {
+    player_->service();
+    serviceLoopBoundaries(player_->frameCounter());
+  }
   const uint32_t now=millis();
   for(uint8_t i=0;i<kSlotCount;++i){
     if(held_[i] && mode_==Mode::Sampler && !recording_[i] && now-pressedAt_[i]>=kPadHoldMs) startRecording(i,false);
-  }
-  const uint32_t beatMs=uint32_t(60000.0f/kDefaultBpm);
-  while(int32_t(now-nextBeatMs_)>=0){
-    beat_=uint8_t((beat_+1)%kBeatsPerBar);
-    nextBeatMs_+=beatMs;
-    if(beat_==0)applyLoopBoundary();
   }
 }
 
