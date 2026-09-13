@@ -12,6 +12,8 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [x] macOS GitHub Actions compile workflow added for Teensy 4.0 and 4.1.
 - [x] Teensy 4.0 uses Audio Adapter/external SPI SD; no PSRAM dependency.
 - [x] Teensy 4.1 selects built-in SDIO storage at compile time.
+- [x] Teensy 4.0 compiles successfully on macOS with PJRC Teensy core 1.62.0 via `make teensy40`.
+- [x] Teensy 4.1 compiles successfully on macOS with PJRC Teensy core 1.62.0 via `make teensy41`.
 
 `arduino-cli` is intentionally an orchestration dependency, not an IDE and not the compiler. Make is the public build interface for both platforms.
 
@@ -38,11 +40,15 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [x] Embedded four-voice bass instrument backend for PAD mode; no runtime FluidSynth dependency.
 - [x] Playback underrun and recorder dropped-block counters are exposed on serial every two seconds and on the OLED when nonzero; Teensy Audio memory current/max usage is also reported on serial.
 - [x] PAD synth parity decision: the embedded bass voice is accepted for functional parity (polyphonic note-on/off and velocity response). Exact Raspberry Pi SoundFont timbre is a post-hardware audio-quality enhancement, not a blocker for first Teensy validation.
+- [x] PJRC toolchain compile issues found during CI were fixed; successful builds produced no firmware compiler warnings in the build logs.
 
-## Still required before software handoff
-- [ ] Confirm Teensy 4.0 compile in CI/local PJRC toolchain.
-- [ ] Confirm Teensy 4.1 compile in CI/local PJRC toolchain.
-- [ ] Review and fix any compiler warnings/errors found by the PJRC toolchain.
+## Software handoff status
+
+All planned software milestones required before first hardware validation are complete. The branch is ready for local macOS build, flash and hardware testing.
+
+Reference CI memory usage at the successful macOS build:
+- Teensy 4.0: FLASH code 139104 bytes, RAM1 variables 187712 bytes, RAM1 local-variable headroom 172736 bytes, RAM2 variables 60256 bytes.
+- Teensy 4.1: FLASH code 140192 bytes, RAM1 variables 187808 bytes, RAM1 local-variable headroom 172640 bytes, RAM2 variables 60256 bytes.
 
 ## Hardware-only validation after software handoff
 - [ ] Physical Teensy 4.0 + Audio Adapter + MPD218 + SD + OLED validation.
@@ -53,4 +59,4 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [ ] AEC convergence/tuning test against the final enclosure/speaker/microphone geometry.
 - [ ] Long-duration soak and power-cycle/session-recovery test.
 
-The branch is substantially beyond the original bring-up skeleton, but it is not yet ready for the requested build/flash handoff. The remaining software items above must be completed first; hardware-only items remain explicitly unverified until exercised on real hardware.
+Do not interpret successful compilation as hardware validation. The remaining unchecked items require real hardware.
