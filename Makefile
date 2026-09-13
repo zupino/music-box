@@ -7,6 +7,17 @@ CPPFLAGS += -D_POSIX_C_SOURCE=200809L -Isrc
 WARNINGS = -Wall -Wextra -Wpedantic -Wconversion -Wshadow
 LDLIBS = -ljack -lasound -lpthread -lm
 
+# Teensy builds deliberately use the PJRC board package through arduino-cli
+# rather than duplicating its arm-none-eabi compiler, core, linker and library
+# recipes here.  Make remains the project's single build entry point.
+ARDUINO_CLI ?= arduino-cli
+TEENSY_CORE_URL ?= https://www.pjrc.com/teensy/package_teensy_index.json
+TEENSY_CORE ?= teensy:avr
+TEENSY40_FQBN ?= teensy:avr:teensy40
+TEENSY41_FQBN ?= teensy:avr:teensy41
+TEENSY_SKETCH := firmware/teensy
+TEENSY_BUILD_DIR := build/teensy
+
 SOURCES = \
 	src/main.c \
 	src/config.c \
@@ -34,9 +45,10 @@ TEST_BINS = \
 	build/test_session_store \
 	build/test_volume
 
-.PHONY: all clean install test
+.PHONY: all rpi clean install test teensy-setup teensy40 teensy41 teensy40-upload teensy41-upload
 
-all: music-box
+all: rpi
+rpi: music-box
 
 music-box: $(OBJECTS)
 	$(CC) $(CFLAGS) $(WARNINGS) -o $@ $(OBJECTS) $(LDLIBS)
@@ -79,6 +91,33 @@ test: $(TEST_BINS)
 		echo "Running $$test_binary"; \
 		./$$test_binary || exit 1; \
 	done
+
+# One-time host setup. arduino-cli downloads PJRC's Teensy core, which includes
+# the Teensy ARM GCC toolchain and bundled Audio/USBHost/SD libraries. The two
+# Adafruit libraries are the only additional firmware dependencies at present.
+teensy-setup:
+	$(ARDUINO_CLI) core update-index --additional-urls $(TEENSY_CORE_URL)
+	$(ARDUINO_CLI) core install $(TEENSY_CORE) --additional-urls $(TEENSY_CORE_URL)
+	$(ARDUINO_CLI) lib install "Adafruit GFX Library" "Adafruit SSD1306"
+
+teensy40:
+	mkdir -p $(TEENSY_BUILD_DIR)/40
+	$(ARDUINO_CLI) compile --fqbn $(TEENSY40_FQBN) --build-path $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
+
+teensy41:
+	mkdir -p $(TEENSY_BUILD_DIR)/41
+	$(ARDUINO_CLI) compile --fqbn $(TEENSY41_FQBN) --build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
+
+# Set PORT=/dev/ttyACM0 (or the detected device) when command-line upload is
+# supported by the local Teensy/USB setup. The physical Program button remains
+# available when a board is not in a software-rebootable state.
+teensy40-upload: teensy40
+	@test -n "$(PORT)" || (echo "Set PORT=<Teensy port>"; exit 2)
+	$(ARDUINO_CLI) upload -p $(PORT) --fqbn $(TEENSY40_FQBN) --input-dir $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
+
+teensy41-upload: teensy41
+	@test -n "$(PORT)" || (echo "Set PORT=<Teensy port>"; exit 2)
+	$(ARDUINO_CLI) upload -p $(PORT) --fqbn $(TEENSY41_FQBN) --input-dir $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
 install: music-box
 	install -d "$(DESTDIR)$(BINDIR)"
