@@ -59,19 +59,23 @@ Connect the Teensy by USB and inspect its detected port:
 arduino-cli board list
 ```
 
-Then upload, for example:
+PJRC's pluggable discovery commonly reports Teensy boards with a custom port such as `usb:210000` and protocol `teensy`. This is valid and is not expected to look like a normal `/dev/cu.*` serial path. Use the exact value from the `Port` column.
+
+For example:
 
 ```sh
-make teensy40-upload PORT=/dev/cu.usbmodemXXXX
+make teensy40-upload PORT='usb:210000'
 ```
 
-or:
+or for a 4.1:
 
 ```sh
-make teensy41-upload PORT=/dev/cu.usbmodemXXXX
+make teensy41-upload PORT='usb:210000'
 ```
 
-The exact macOS `/dev/cu.*` name is discovered at runtime and should not be hard-coded. A Teensy that cannot be software-rebooted into its bootloader may require pressing the physical Program button once before retrying upload.
+The upload targets explicitly use the Teensy discovery protocol and the same Arduino CLI `--build-path` that was produced by the compile step. The final artifact for Teensy 4.0 is `build/teensy/40/teensy.ino.hex`; the equivalent 4.1 artifact is under `build/teensy/41/`.
+
+A Teensy that cannot be software-rebooted into its bootloader may require pressing the physical Program button once before retrying upload.
 
 The repository also contains a macOS GitHub Actions build that invokes the same `make teensy-setup` and `make teensy40` / `make teensy41` paths. Hardware flashing remains a local operation.
 
