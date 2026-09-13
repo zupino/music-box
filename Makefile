@@ -15,6 +15,7 @@ TEENSY_CORE_URL ?= https://www.pjrc.com/teensy/package_teensy_index.json
 TEENSY_CORE ?= teensy:avr
 TEENSY40_FQBN ?= teensy:avr:teensy40
 TEENSY41_FQBN ?= teensy:avr:teensy41
+TEENSY_PORT_PROTOCOL ?= teensy
 TEENSY_SKETCH := firmware/teensy
 TEENSY_BUILD_DIR := build/teensy
 
@@ -128,16 +129,21 @@ teensy41:
 		--build-property compiler.cpp.extra_flags="-DMUSIC_BOX_SD_BUILTIN=1" \
 		--build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
-# PORT is normally shown by `arduino-cli board list` after the Teensy is
-# connected over USB. If automatic reboot cannot reach the bootloader, press
-# the Teensy's Program button once and repeat the upload command.
+# Teensy discovery normally reports a custom port such as `usb:210000` with
+# protocol `teensy`; it does not have to be a /dev/cu.* serial pathname.
+# Upload from the exact --build-path produced by the compile target. If
+# automatic reboot cannot reach the bootloader, press Program once and retry.
 teensy40-upload: teensy40
-	@test -n "$(PORT)" || (echo "Set PORT=<port from: arduino-cli board list>"; exit 2)
-	$(ARDUINO_CLI) upload -p $(PORT) --fqbn $(TEENSY40_FQBN) --input-dir $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
+	@test -n "$(PORT)" || (echo "Set PORT=<Port column from: arduino-cli board list>"; exit 2)
+	@test -f "$(TEENSY_BUILD_DIR)/40/teensy.ino.hex" || (echo "Missing $(TEENSY_BUILD_DIR)/40/teensy.ino.hex; run make teensy40"; exit 2)
+	$(ARDUINO_CLI) upload -p "$(PORT)" -l $(TEENSY_PORT_PROTOCOL) \
+		--fqbn $(TEENSY40_FQBN) --build-path $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
 
 teensy41-upload: teensy41
-	@test -n "$(PORT)" || (echo "Set PORT=<port from: arduino-cli board list>"; exit 2)
-	$(ARDUINO_CLI) upload -p $(PORT) --fqbn $(TEENSY41_FQBN) --input-dir $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
+	@test -n "$(PORT)" || (echo "Set PORT=<Port column from: arduino-cli board list>"; exit 2)
+	@test -f "$(TEENSY_BUILD_DIR)/41/teensy.ino.hex" || (echo "Missing $(TEENSY_BUILD_DIR)/41/teensy.ino.hex; run make teensy41"; exit 2)
+	$(ARDUINO_CLI) upload -p "$(PORT)" -l $(TEENSY_PORT_PROTOCOL) \
+		--fqbn $(TEENSY41_FQBN) --build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
 install: music-box
 	install -d "$(DESTDIR)$(BINDIR)"
