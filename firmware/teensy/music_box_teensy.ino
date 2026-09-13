@@ -63,23 +63,84 @@ AudioEffectEnvelope *synthEnvelopes[BassInstrument::kVoices]={&synthEnv0,&synthE
 BassInstrument instrument(synthOscillators,synthEnvelopes);
 Engine engine;
 static bool sdReady=false;
+static uint32_t volumeOverlayUntil=0;
 
 static void onNoteOn(byte ch, byte note, byte velocity){(void)ch;engine.noteOn(note,velocity);}
 static void onNoteOff(byte ch, byte note, byte velocity){(void)ch;(void)velocity;engine.noteOff(note);}
 static void onCC(byte ch, byte cc, byte value){
   (void)ch;engine.control(cc,value);
-  if(cc==kVolumeCc){float v=0.02f+0.78f*(float(value)/127.0f);codec.volume(v);}
+  if(cc==kVolumeCc){
+    float v=0.02f+0.78f*(float(value)/127.0f);
+    codec.volume(v);
+    volumeOverlayUntil=millis()+900;
+  }
+}
+
+static void drawPadGrid(){
+  const uint16_t loaded=engine.loadedMask();
+  const uint16_t playing=engine.playingLoopMask();
+  const uint16_t pending=engine.pendingLoopMask();
+  const uint8_t rec=engine.recordingSlot();
+  const bool blink=((millis()/250u)&1u)==0;
+  for(uint8_t slot=0;slot<16;++slot){
+    const uint8_t x=3+(slot%4)*9;
+    const uint8_t y=(slot/4)*8;
+    const uint16_t bit=uint16_t(1u<<slot);
+    if(rec==slot){
+      if(blink) oled.fillRect(x,y,7,7,SSD1306_WHITE);
+      else oled.drawRect(x,y,7,7,SSD1306_WHITE);
+    }else if((pending&bit)!=0){
+      oled.drawRect(x,y,7,7,SSD1306_WHITE);
+      oled.drawLine(x+1,y+1,x+5,y+5,SSD1306_WHITE);
+      oled.drawLine(x+5,y+1,x+1,y+5,SSD1306_WHITE);
+    }else if((playing&bit)!=0){
+      oled.fillRect(x,y,7,7,SSD1306_WHITE);
+    }else if((loaded&bit)!=0){
+      oled.drawRect(x,y,7,7,SSD1306_WHITE);
+    }else{
+      oled.drawFastHLine(x,y+6,7,SSD1306_WHITE);
+    }
+  }
+}
+
+static void drawBeatRail(){
+  const uint8_t current=engine.beat();
+  for(uint8_t beat=0;beat<4;++beat){
+    const uint8_t y=1+beat*8;
+    if(beat==current) oled.fillRect(122,y,5,5,SSD1306_WHITE);
+    else oled.fillRect(123,y+1,3,3,SSD1306_WHITE);
+  }
+}
+
+static void drawStatus(){
+  static const char *names[]={"LOOP","SAMPLR","PAD","MELODY","FILES"};
+  oled.drawFastVLine(40,0,32,SSD1306_WHITE);
+  oled.setCursor(44,0);oled.print(names[uint8_t(engine.mode())]);
+  oled.setCursor(44,11);oled.print("120 BPM");
+  oled.setCursor(44,22);
+  if(engine.recording()){
+    oled.print("REC ");oled.print(engine.recordingMonitor()?"MON":"MIC");
+    const uint8_t slot=engine.recordingSlot();if(slot<16){oled.print(" ");oled.print(slot+1);}
+  }else if(engine.mode()==Mode::Loop || engine.mode()==Mode::Melody || engine.mode()==Mode::Sampler){
+    oled.print("S");oled.print(engine.selectedSample()+1);
+  }else if(!sdReady){
+    oled.print("NO SD");
+  }
+}
+
+static void drawVolumeOverlay(){
+  oled.fillRect(42,9,77,22,SSD1306_BLACK);
+  oled.drawRect(44,13,70,8,SSD1306_WHITE);
+  const uint8_t width=uint8_t((uint16_t(engine.volume())*66u)/127u);
+  if(width) oled.fillRect(46,15,width,4,SSD1306_WHITE);
+  oled.setCursor(44,23);oled.print("VOL ");oled.print((uint16_t(engine.volume())*100u)/127u);oled.print("%");
 }
 
 static void drawUi(){
   static uint32_t next=0;if(int32_t(millis()-next)<0)return;next=millis()+50;
-  oled.clearDisplay();oled.setTextSize(1);oled.setTextColor(SSD1306_WHITE);oled.setCursor(0,0);
-  static const char *names[]={"LOOP","SAMPLE","PAD","MELODY","FILES"};oled.print(names[uint8_t(engine.mode())]);
-  oled.setCursor(72,0);oled.print("S");oled.print(engine.selectedSample()+1);
-  oled.setCursor(105,0);oled.print(engine.beat()+1);
-  const SampleMeta *s=engine.samples();
-  for(uint8_t i=0;i<16;++i){uint8_t x=(i%8)*15,y=12+(i/8)*8;if(s[i].present)oled.fillRect(x,y,10,4,SSD1306_WHITE);else oled.drawRect(x,y,10,4,SSD1306_WHITE);}
-  if(engine.recording()){oled.setCursor(88,24);oled.print("REC");}
+  oled.clearDisplay();oled.setTextSize(1);oled.setTextColor(SSD1306_WHITE);
+  drawPadGrid();drawStatus();drawBeatRail();
+  if(int32_t(volumeOverlayUntil-millis())>0)drawVolumeOverlay();
   oled.display();
 }
 
