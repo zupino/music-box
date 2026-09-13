@@ -11,6 +11,10 @@ namespace musicbox {
  * Fixed-memory stereo sample mixer. SD I/O happens only from service(), never
  * from AudioStream::update(). Each active voice owns a bounded ring buffer;
  * update() only interpolates/mixes already-buffered 16-bit stereo PCM.
+ *
+ * The stream also owns the Teensy transport frame counter. Loop voices may be
+ * pre-buffered and armed for an exact future frame, or stopped at an exact
+ * future frame. This keeps beat/bar boundaries independent of loop() latency.
  */
 class SampleStream : public AudioStream {
  public:
@@ -22,9 +26,14 @@ class SampleStream : public AudioStream {
 
   bool play(uint8_t sampleSlot, const SampleMeta &meta, float rate = 1.0f,
             bool loop = false, uint8_t owner = 0xff, uint8_t gain = 127);
+  bool playAt(uint8_t sampleSlot, const SampleMeta &meta, uint64_t startFrame,
+              float rate = 1.0f, bool loop = false, uint8_t owner = 0xff,
+              uint8_t gain = 127);
   void stopOwner(uint8_t owner);
+  void stopOwnerAt(uint8_t owner, uint64_t stopFrame);
   void stopAll();
   bool ownerActive(uint8_t owner) const;
+  uint64_t frameCounter() const;
   void service();
   uint32_t underruns() const { return underruns_; }
   virtual void update() override;
@@ -34,6 +43,7 @@ class SampleStream : public AudioStream {
     bool active = false;
     bool looping = false;
     bool sourceEnded = false;
+    volatile bool pendingClose = false;
     uint8_t sampleSlot = 0xff;
     uint8_t owner = 0xff;
     uint8_t gain = 127;
@@ -42,6 +52,8 @@ class SampleStream : public AudioStream {
     uint32_t sourceFrame = 0;
     uint32_t phaseQ16 = 0;
     uint32_t rateQ16 = 65536;
+    uint64_t startAt = 0;
+    volatile uint64_t stopAt = UINT64_MAX;
     volatile uint16_t head = 0;
     volatile uint16_t tail = 0;
     volatile uint16_t count = 0;
@@ -52,9 +64,11 @@ class SampleStream : public AudioStream {
   Storage *storage_ = nullptr;
   Voice voices_[kVoiceCount];
   volatile uint32_t underruns_ = 0;
+  volatile uint64_t frameCounter_ = 0;
 
   int8_t chooseVoice(bool loop, uint8_t owner);
   void closeVoice(Voice &v);
+  void stopVoiceFromAudio(Voice &v);
   bool refill(Voice &v);
   static int16_t clamp16(int32_t v);
 };
