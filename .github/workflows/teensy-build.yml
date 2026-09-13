@@ -6,6 +6,10 @@ on:
       - feature/teensy-dual-target-port
   workflow_dispatch:
 
+concurrency:
+  group: teensy-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   teensy:
     runs-on: macos-latest
