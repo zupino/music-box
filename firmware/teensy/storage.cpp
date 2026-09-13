@@ -9,9 +9,10 @@ void Storage::samplePath(uint8_t slot, char *out, size_t n, bool temp) {
 }
 
 bool Storage::begin() {
-#if MUSIC_BOX_SD_BUILTIN
+#if defined(ARDUINO_TEENSY41)
   if (!SD.begin(BUILTIN_SDCARD)) return false;
 #else
+  // Teensy 4.0 has no onboard SDIO socket; use the Audio Adapter/external SPI SD.
   if (!SD.begin(kAudioShieldSdCs)) return false;
 #endif
   if (!SD.exists("/musicbox")) SD.mkdir("/musicbox");
