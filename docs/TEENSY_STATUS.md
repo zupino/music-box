@@ -36,13 +36,12 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [x] Fixed-memory stereo NLMS AEC using exact final speaker mix as reference.
 - [x] Linked stereo noise gate using current Raspberry Pi default parameters.
 - [x] Embedded four-voice bass instrument backend for PAD mode; no runtime FluidSynth dependency.
-- [x] Playback underrun and recorder dropped-block counters are implemented internally.
+- [x] Playback underrun and recorder dropped-block counters are exposed on serial every two seconds and on the OLED when nonzero; Teensy Audio memory current/max usage is also reported on serial.
 
 ## Still required before software handoff
 - [ ] Confirm Teensy 4.0 compile in CI/local PJRC toolchain.
 - [ ] Confirm Teensy 4.1 compile in CI/local PJRC toolchain.
 - [ ] Decide whether the embedded synth backend is sufficient parity or add an offline SF2-to-embedded-instrument conversion workflow.
-- [ ] Expose underrun/dropped-block diagnostics on serial/OLED for stress testing.
 - [ ] Review and fix any compiler warnings/errors found by the PJRC toolchain.
 
 ## Hardware-only validation after software handoff
