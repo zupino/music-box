@@ -4,8 +4,8 @@
 
 namespace musicbox {
 
-bool Engine::begin(Storage *s, SampleStream *player, StereoRecorder *recorder) {
-  storage_=s; player_=player; recorder_=recorder;
+bool Engine::begin(Storage *s, SampleStream *player, StereoRecorder *recorder, BassInstrument *instrument) {
+  storage_=s; player_=player; recorder_=recorder; instrument_=instrument;
   storage_->loadManifest(samples_,assignments_);
   nextBeatMs_=millis()+uint32_t(60000.0f/kDefaultBpm);
   return true;
@@ -25,9 +25,9 @@ void Engine::noteOn(uint8_t note,uint8_t velocity){
 }
 
 void Engine::noteOff(uint8_t note){
+  if(mode_==Mode::Pad){ if(instrument_)instrument_->noteOff(note); return; }
   int8_t slot=noteToSlot(note); if(slot<0)return;
   uint32_t held=millis()-pressedAt_[slot];held_[slot]=false;
-  if(mode_==Mode::Pad)return;
   if(held>=kPadHoldMs)longRelease(slot);else shortPress(slot);
 }
 
@@ -160,8 +160,8 @@ void Engine::triggerSample(uint8_t slot,float rate){
   if(player_ && slot<kSlotCount && samples_[slot].present) player_->play(slot,samples_[slot],rate,false,0xff);
 }
 
-void Engine::triggerInstrument(uint8_t,uint8_t){
-  // Implemented by the dedicated embedded instrument backend in the synth milestone.
+void Engine::triggerInstrument(uint8_t note,uint8_t velocity){
+  if(instrument_)instrument_->noteOn(note,velocity);
 }
 
 }  // namespace musicbox
