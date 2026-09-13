@@ -37,11 +37,11 @@ This file is intentionally strict: a box is checked only when implementation exi
 - [x] Linked stereo noise gate using current Raspberry Pi default parameters.
 - [x] Embedded four-voice bass instrument backend for PAD mode; no runtime FluidSynth dependency.
 - [x] Playback underrun and recorder dropped-block counters are exposed on serial every two seconds and on the OLED when nonzero; Teensy Audio memory current/max usage is also reported on serial.
+- [x] PAD synth parity decision: the embedded bass voice is accepted for functional parity (polyphonic note-on/off and velocity response). Exact Raspberry Pi SoundFont timbre is a post-hardware audio-quality enhancement, not a blocker for first Teensy validation.
 
 ## Still required before software handoff
 - [ ] Confirm Teensy 4.0 compile in CI/local PJRC toolchain.
 - [ ] Confirm Teensy 4.1 compile in CI/local PJRC toolchain.
-- [ ] Decide whether the embedded synth backend is sufficient parity or add an offline SF2-to-embedded-instrument conversion workflow.
 - [ ] Review and fix any compiler warnings/errors found by the PJRC toolchain.
 
 ## Hardware-only validation after software handoff
