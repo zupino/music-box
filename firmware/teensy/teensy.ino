@@ -63,6 +63,7 @@ AudioEffectEnvelope *synthEnvelopes[BassInstrument::kVoices]={&synthEnv0,&synthE
 BassInstrument instrument(synthOscillators,synthEnvelopes);
 Engine engine;
 static bool sdReady=false;
+static bool oledReady=false;
 static uint32_t volumeOverlayUntil=0;
 
 static void onNoteOn(byte ch, byte note, byte velocity){(void)ch;engine.noteOn(note,velocity);}
@@ -74,6 +75,22 @@ static void onCC(byte ch, byte cc, byte value){
     codec.volume(v);
     volumeOverlayUntil=millis()+900;
   }
+}
+
+static void scanI2c(){
+  Serial.println("music-box: scanning I2C bus (SDA=18, SCL=19)");
+  uint8_t found=0;
+  for(uint8_t address=1;address<127;++address){
+    Wire.beginTransmission(address);
+    const uint8_t error=Wire.endTransmission();
+    if(error==0){
+      Serial.print("music-box: I2C device at 0x");
+      if(address<16)Serial.print('0');
+      Serial.println(address,HEX);
+      ++found;
+    }
+  }
+  if(found==0)Serial.println("music-box: no I2C devices found");
 }
 
 static void drawPadGrid(){
@@ -139,6 +156,7 @@ static void drawVolumeOverlay(){
 }
 
 static void drawUi(){
+  if(!oledReady)return;
   static uint32_t next=0;if(int32_t(millis()-next)<0)return;next=millis()+50;
   oled.clearDisplay();oled.setTextSize(1);oled.setTextColor(SSD1306_WHITE);
   drawPadGrid();drawStatus();drawBeatRail();
@@ -151,7 +169,9 @@ static void serviceDiagnostics(){
   const uint32_t now=millis();
   if(int32_t(now-next)<0)return;
   next=now+2000;
-  Serial.print("music-box diag: underruns=");Serial.print(engine.underruns());
+  Serial.print("music-box diag: oled=");Serial.print(oledReady?"ok":"missing");
+  Serial.print(" sd=");Serial.print(sdReady?"ok":"missing");
+  Serial.print(" underruns=");Serial.print(engine.underruns());
   Serial.print(" dropped_record_blocks=");Serial.print(engine.droppedRecordBlocks());
   Serial.print(" audio_mem=");Serial.print(AudioMemoryUsage());
   Serial.print(" audio_mem_max=");Serial.println(AudioMemoryUsageMax());
@@ -159,18 +179,41 @@ static void serviceDiagnostics(){
 
 void setup(){
   Serial.begin(115200);
+  const uint32_t serialWaitStart=millis();
+  while(!Serial && millis()-serialWaitStart<1500u){}
+  Serial.println();
+  Serial.println("music-box: booting Teensy 4.x firmware");
+
   AudioMemory(180);
   Wire.begin();
+  scanI2c();
+
   codec.enable();codec.inputSelect(AUDIO_INPUT_LINEIN);codec.lineInLevel(5);codec.volume(0.55f);codec.lineOutLevel(13);
   for(uint8_t i=0;i<4;++i)synthMixer.gain(i,0.24f);
   outL.gain(0,0.72f);outL.gain(1,0.55f);outR.gain(0,0.72f);outR.gain(1,0.55f);
   instrument.begin();
+
   sdReady=storage.begin();
-  if(!sdReady)Serial.println("music-box: SD unavailable");
+  Serial.println(sdReady?"music-box: SD ready":"music-box: SD unavailable");
   sampleStream.setStorage(&storage);
   recorder.begin();
   engine.begin(&storage,&sampleStream,&recorder,&instrument);
-  if(oled.begin(SSD1306_SWITCHCAPVCC,0x3c)){oled.clearDisplay();oled.display();}
+
+  oledReady=oled.begin(SSD1306_SWITCHCAPVCC,0x3c);
+  if(oledReady){
+    Serial.println("music-box: OLED ready at I2C 0x3C");
+    oled.clearDisplay();
+    oled.setTextSize(1);
+    oled.setTextColor(SSD1306_WHITE);
+    oled.setCursor(0,0);
+    oled.println("MUSIC BOX");
+    oled.println("TEENSY 4.0");
+    oled.display();
+    delay(500);
+  }else{
+    Serial.println("music-box: OLED init FAILED at I2C 0x3C");
+  }
+
   usbHost.begin();midi.setHandleNoteOn(onNoteOn);midi.setHandleNoteOff(onNoteOff);midi.setHandleControlChange(onCC);
   Serial.println("music-box Teensy target ready");
 }
