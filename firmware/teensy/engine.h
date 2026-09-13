@@ -18,8 +18,15 @@ class Engine {
   Mode mode() const { return mode_; }
   uint8_t selectedSample() const { return selectedSample_; }
   const SampleMeta *samples() const { return samples_; }
-  uint8_t beat() const { return beat_; }
+  uint8_t beat() const;
+  uint8_t volume() const { return volume_; }
   bool recording() const { return recorder_ && recorder_->active(); }
+  bool recordingMonitor() const { return monitorRecording_; }
+  uint8_t recordingSlot() const;
+  uint16_t loadedMask() const;
+  uint16_t playingLoopMask() const;
+  uint16_t pendingLoopMask() const;
+  uint32_t underruns() const { return player_ ? player_->underruns() : 0; }
  private:
   Storage *storage_=nullptr;
   SampleStream *player_=nullptr;
@@ -36,11 +43,11 @@ class Engine {
   bool recording_[kSlotCount]{};
   bool loopActive_[kSlotCount]{};
   bool loopTogglePending_[kSlotCount]{};
+  bool loopTargetActive_[kSlotCount]{};
+  uint64_t loopBoundaryFrame_[kSlotCount]{};
   uint8_t monitorSlot_=0xff;
   bool monitorRecording_=false;
   bool monitorCcHigh_=false;
-  uint32_t nextBeatMs_=0;
-  uint8_t beat_=0;
 
   void shortPress(uint8_t slot);
   void longRelease(uint8_t slot);
@@ -52,6 +59,9 @@ class Engine {
   void finishRecording(uint8_t slot);
   void triggerSample(uint8_t slot, float rate=1.0f);
   void triggerInstrument(uint8_t note, uint8_t velocity);
-  void applyLoopBoundary();
+  uint64_t beatFrames() const;
+  uint64_t barFrames() const;
+  uint64_t nextBarFrame() const;
+  void serviceLoopBoundaries(uint64_t nowFrame);
 };
 }
