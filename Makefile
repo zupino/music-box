@@ -117,12 +117,16 @@ teensy-setup: teensy-check
 teensy40:
 	@command -v $(ARDUINO_CLI) >/dev/null || { echo "Run: make teensy-setup"; exit 2; }
 	mkdir -p $(TEENSY_BUILD_DIR)/40
-	$(ARDUINO_CLI) compile --fqbn $(TEENSY40_FQBN) --build-path $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
+	$(ARDUINO_CLI) compile --fqbn $(TEENSY40_FQBN) \
+		--build-property compiler.cpp.extra_flags="-DMUSIC_BOX_SD_BUILTIN=0" \
+		--build-path $(TEENSY_BUILD_DIR)/40 $(TEENSY_SKETCH)
 
 teensy41:
 	@command -v $(ARDUINO_CLI) >/dev/null || { echo "Run: make teensy-setup"; exit 2; }
 	mkdir -p $(TEENSY_BUILD_DIR)/41
-	$(ARDUINO_CLI) compile --fqbn $(TEENSY41_FQBN) --build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
+	$(ARDUINO_CLI) compile --fqbn $(TEENSY41_FQBN) \
+		--build-property compiler.cpp.extra_flags="-DMUSIC_BOX_SD_BUILTIN=1" \
+		--build-path $(TEENSY_BUILD_DIR)/41 $(TEENSY_SKETCH)
 
 # PORT is normally shown by `arduino-cli board list` after the Teensy is
 # connected over USB. If automatic reboot cannot reach the bootloader, press
