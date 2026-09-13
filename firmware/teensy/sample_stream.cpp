@@ -135,10 +135,12 @@ bool SampleStream::refill(Voice &v) {
 
   uint16_t tail;
   AudioNoInterrupts(); tail = v.tail; count = v.count; AudioInterrupts();
-  const uint16_t freeFrames = kRingFrames - count;
-  const uint16_t contiguous = min<uint16_t>(freeFrames, kRingFrames - tail);
+  const uint16_t freeFrames = static_cast<uint16_t>(kRingFrames - count);
+  const uint16_t contiguousLimit = static_cast<uint16_t>(kRingFrames - tail);
+  const uint16_t contiguous = freeFrames < contiguousLimit ? freeFrames : contiguousLimit;
   const uint32_t remaining = v.endFrame - v.sourceFrame;
-  const uint16_t want = min<uint16_t>(contiguous, min<uint32_t>(remaining, 192u));
+  const uint32_t readLimit = remaining < 192u ? remaining : 192u;
+  const uint16_t want = contiguous < readLimit ? contiguous : static_cast<uint16_t>(readLimit);
   if (!want) return false;
 
   const int bytes = v.file.read(reinterpret_cast<uint8_t *>(&v.ring[tail][0]), static_cast<size_t>(want) * 4u);
