@@ -27,6 +27,7 @@ class Engine {
   uint16_t playingLoopMask() const;
   uint16_t pendingLoopMask() const;
   uint32_t underruns() const { return player_ ? player_->underruns() : 0; }
+  uint32_t droppedRecordBlocks() const { return recorder_ ? recorder_->droppedBlocks() : 0; }
  private:
   Storage *storage_=nullptr;
   SampleStream *player_=nullptr;
