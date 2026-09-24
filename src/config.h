@@ -13,10 +13,11 @@
 /* MIDI notes are 0-127, so this cannot collide with a real mapping. */
 #define MUSIC_BOX_NOTE_UNMAPPED 0xffu
 
-/* The absolute mode knob is split into loop, sampler, pad and melody quarters. */
-#define MUSIC_BOX_MODE_FIRST_SWITCH 31
-#define MUSIC_BOX_MODE_SECOND_SWITCH 63
-#define MUSIC_BOX_MODE_THIRD_SWITCH 95
+/* The absolute mode knob is split into five approximately equal zones. */
+#define MUSIC_BOX_MODE_FIRST_SWITCH 25
+#define MUSIC_BOX_MODE_SECOND_SWITCH 51
+#define MUSIC_BOX_MODE_THIRD_SWITCH 76
+#define MUSIC_BOX_MODE_FOURTH_SWITCH 102
 
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];
@@ -30,6 +31,8 @@ typedef struct {
     /* Half-width of the dead band around the mode knob's midpoint, in CC
        counts. Smaller means less rotation is needed to change mode. */
     uint8_t mode_cc_hysteresis;
+    /* Zero-based General MIDI program sent to every FluidSynth channel. */
+    uint8_t soundfont_program;
     uint8_t loop_select_cc;
     uint8_t sample_select_cc;
     uint8_t trim_start_cc;

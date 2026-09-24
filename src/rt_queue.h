@@ -17,10 +17,11 @@ typedef enum {
     MUSIC_BOX_MODE_LOOP = 0,
     MUSIC_BOX_MODE_SAMPLER,
     MUSIC_BOX_MODE_PAD,
-    MUSIC_BOX_MODE_MELODY
+    MUSIC_BOX_MODE_MELODY,
+    MUSIC_BOX_MODE_FILES
 } MusicBoxMode;
 
-#define MUSIC_BOX_MODE_COUNT 4u
+#define MUSIC_BOX_MODE_COUNT 5u
 
 typedef enum {
     MUSIC_BOX_COMMAND_PAD_PRESS = 1,
@@ -36,7 +37,9 @@ typedef enum {
     /* One deliberate K3 movement in any mode starts or stops capture of the
        final speaker mix into the first empty sampler slot. */
     MUSIC_BOX_COMMAND_TOGGLE_MONITOR_RECORDING,
-    MUSIC_BOX_COMMAND_STOP_ALL_LOOPS
+    MUSIC_BOX_COMMAND_STOP_ALL_LOOPS,
+    /* Pad-mode K4 changed the live SoundFont program. */
+    MUSIC_BOX_COMMAND_SET_PAD_PROGRAM
 } MusicBoxCommandType;
 
 typedef enum {
@@ -79,7 +82,9 @@ typedef enum {
     /* Startup-only UI reconstruction. These deliberately differ from live
        edit events so restored state is not written back to disk immediately. */
     MUSIC_BOX_EVENT_RESTORED_SAMPLE,
-    MUSIC_BOX_EVENT_RESTORED_LOOP
+    MUSIC_BOX_EVENT_RESTORED_LOOP,
+    MUSIC_BOX_EVENT_SAMPLE_DELETED,
+    MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED
 } MusicBoxEventType;
 
 typedef struct {

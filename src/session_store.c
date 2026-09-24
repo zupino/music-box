@@ -108,6 +108,17 @@ bool music_box_session_store_save_sample(const MusicBoxSessionStore *store,
     return ok;
 }
 
+bool music_box_session_store_delete_sample(const MusicBoxSessionStore *store,
+                                           uint8_t slot)
+{
+    if (!store->enabled) return true;
+    if (slot >= MUSIC_BOX_LOOP_COUNT) return false;
+    char path[160];
+    if (!path_for(path, sizeof(path), store, "sample", slot, false)) return false;
+    if (unlink(path) != 0 && errno != ENOENT) return false;
+    return sync_directory(store);
+}
+
 bool music_box_session_store_save_manifest(const MusicBoxSessionStore *store,
                                            const MusicBoxLoopBank *samples,
                                            const MusicBoxLoopBank *loops)

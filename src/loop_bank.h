@@ -119,6 +119,9 @@ bool music_box_loop_bank_select_recorded(const MusicBoxLoopBank *bank,
                                          uint8_t division_count,
                                          uint8_t *slot);
 void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank);
+bool music_box_loop_bank_delete_sample(MusicBoxLoopBank *samples,
+                                       MusicBoxLoopBank *loops,
+                                       uint8_t sample_slot);
 void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot,
                                   bool start, uint8_t controller_value);
 void music_box_loop_bank_sync_assignments(MusicBoxLoopBank *loops,
