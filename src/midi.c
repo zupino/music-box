@@ -216,6 +216,12 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
              midi->mode == MUSIC_BOX_MODE_FILES);
         queue_pad_command(midi, pressed ? MUSIC_BOX_COMMAND_PAD_PRESS : MUSIC_BOX_COMMAND_PAD_RELEASE, (uint8_t)slot);
         if (!forward) return;
+        /* Drum controllers commonly transmit on MIDI channel 10, which older
+           FluidSynth versions permanently bind to percussion bank 128 and do
+           not expose a setting for disabling. Pad mode is melodic by design,
+           so route its mapped notes to MIDI channel 1. Note Off follows the
+           same path because pad_forwarded keeps the gesture paired. */
+        event->data.note.channel = 0u;
     }
     if (handle_mode_controller(midi, event)) return;
     if (handle_pad_program_controller(midi, sequencer, output_port, event)) return;

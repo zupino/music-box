@@ -13,13 +13,13 @@ journalctl -u music-box.service -n 30 --no-pager | grep 'Pad SoundFont program'
 ```
 
 An MPD218 may send on MIDI channel 10 (reported by FluidSynth as zero-based
-`channel 9`). FluidSynth normally pins that channel to percussion bank 128, and
-will log messages such as `bank=128 prog=127` even after receiving melodic bank
-selection. Music Box disables FluidSynth's dedicated drum channel and then
-selects melodic SoundFont bank 0 before applying `soundfont_program`, so channel
-10 follows the configured instrument too. Re-run the installer after upgrading
-because this option is part of the installed `start-fluidsynth` launcher, then
-restart both services:
+`channel 9`). FluidSynth pins that channel to percussion bank 128 and may log
+messages such as `bank=128 prog=127` even after receiving melodic bank
+selection. Some packaged FluidSynth versions do not provide a setting to
+disable that behavior. Music Box therefore routes mapped pad-mode notes to MIDI
+channel 1, then selects melodic SoundFont bank 0 and applies
+`soundfont_program`. Re-run the installer after upgrading because both the
+installed binary and launcher need to be refreshed, then restart both services:
 
 ```sh
 sudo ./scripts/install.sh --skip-packages

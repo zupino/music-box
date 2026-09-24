@@ -66,6 +66,8 @@ This page summarises the capabilities currently implemented on the main developm
 - startup selects configurable zero-based General MIDI program 32 (Acoustic
   Bass by default) on every channel;
 - knob 4 selects programs 0-127 directly while pad mode is active;
+- mapped pad notes are routed to melodic MIDI channel 1, avoiding the fixed
+  percussion behavior of channel 10 on older FluidSynth releases;
 - pad notes are forwarded with their velocity rather than consumed;
 - loops and samples keep playing underneath;
 - a Note Off follows its own Note On, so a mode change mid-press cannot hang a
