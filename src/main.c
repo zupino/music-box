@@ -31,7 +31,7 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
 {
     const unsigned int slot = (unsigned int)event->slot + 1u;
     static const char *const banks[MUSIC_BOX_MODE_COUNT] = {
-        "Loop", "Sample", "Pad", "Melody"
+        "Loop", "Sample", "Pad", "Melody", "Files"
     };
     const char *bank = banks[event->bank < MUSIC_BOX_MODE_COUNT ? event->bank : 0u];
     switch (event->type) {
@@ -103,6 +103,13 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
         printf("Loop %u: restored sample %llu assignment\n", slot,
                (unsigned long long)event->value + 1u);
         break;
+    case MUSIC_BOX_EVENT_SAMPLE_DELETED:
+        printf("Sample %u: deleted\n", slot);
+        break;
+    case MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED:
+        printf("Pad SoundFont program: %llu (zero-based)\n",
+               (unsigned long long)event->value);
+        break;
     default:
         break;
     }
@@ -116,7 +123,8 @@ static void persist_event(MusicBoxAudioEngine *engine,
         event->bank == (uint8_t)MUSIC_BOX_MODE_SAMPLER;
     const bool metadata_changed = completed_sample ||
         event->type == MUSIC_BOX_EVENT_SAMPLE_ASSIGNED ||
-        event->type == MUSIC_BOX_EVENT_TRIM_CHANGED;
+        event->type == MUSIC_BOX_EVENT_TRIM_CHANGED ||
+        event->type == MUSIC_BOX_EVENT_SAMPLE_DELETED;
     if (!metadata_changed || !engine->session_store.enabled) return;
     music_box_audio_engine_persistence_begin(engine);
     bool ok = true;
@@ -124,6 +132,9 @@ static void persist_event(MusicBoxAudioEngine *engine,
         ok = music_box_session_store_save_sample(&engine->session_store,
                                                  &engine->sampler_bank,
                                                  event->slot);
+    if (ok && event->type == MUSIC_BOX_EVENT_SAMPLE_DELETED)
+        ok = music_box_session_store_delete_sample(&engine->session_store,
+                                                   event->slot);
     if (ok)
         ok = music_box_session_store_save_manifest(&engine->session_store,
                                                    &engine->sampler_bank,
@@ -193,6 +204,8 @@ int main(int argc, char **argv)
     printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
            pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
            (unsigned int)config.pad_hold_milliseconds);
+    printf("Pad SoundFont program: %u (zero-based), melodic bank 0\n",
+           (unsigned int)config.soundfont_program);
     /* Sampler buffers are reserved up front; loop tracks reference them. */
     const double megabytes_per_second =
         (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;
@@ -202,7 +215,7 @@ int main(int argc, char **argv)
                megabytes_per_second,
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
-        printf("Mode knob: CC %u selects loop, sampler, pad or melody in quarters, dead band +/-%u\n",
+        printf("Mode knob: CC %u selects loop, sampler, pad, melody or files, dead band +/-%u\n",
                (unsigned int)config.mode_cc, (unsigned int)config.mode_cc_hysteresis);
     else
         printf("Mode knob: disabled\n");

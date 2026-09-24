@@ -565,6 +565,39 @@ void music_box_loop_bank_stop_all(MusicBoxLoopBank *bank)
     }
 }
 
+bool music_box_loop_bank_delete_sample(MusicBoxLoopBank *samples,
+                                       MusicBoxLoopBank *loops,
+                                       uint8_t sample_slot)
+{
+    if (samples == NULL || loops == NULL || sample_slot >= MUSIC_BOX_LOOP_COUNT ||
+        samples->slots[sample_slot].recorded_frames == 0u)
+        return false;
+
+    MusicBoxLoopSlot *sample = &samples->slots[sample_slot];
+    sample->state = MUSIC_BOX_LOOP_EMPTY;
+    sample->recorded_frames = 0u;
+    sample->trim_start = 0u;
+    sample->trim_end = 0u;
+    sample->play_position = 0u;
+    uint16_t cleared_loops = 0u;
+    for (uint8_t index = 0u; index < MUSIC_BOX_LOOP_COUNT; ++index) {
+        MusicBoxLoopSlot *loop = &loops->slots[index];
+        if (loop->assigned_sample != sample_slot) continue;
+        loop->state = MUSIC_BOX_LOOP_EMPTY;
+        loop->recorded_frames = 0u;
+        loop->trim_start = 0u;
+        loop->trim_end = 0u;
+        loop->play_position = 0u;
+        loop->assigned_sample = UINT8_MAX;
+        loop->playback_left = NULL;
+        loop->playback_right = NULL;
+        cleared_loops |= (uint16_t)(1u << index);
+    }
+    emit_event(samples, MUSIC_BOX_EVENT_SAMPLE_DELETED, sample_slot,
+               cleared_loops);
+    return true;
+}
+
 void music_box_loop_bank_set_trim(MusicBoxLoopBank *bank, uint8_t slot_index,
                                   bool start, uint8_t value)
 {
