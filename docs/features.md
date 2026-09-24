@@ -28,14 +28,21 @@ This page summarises the capabilities currently implemented on the main developm
 
 ### Performance modes
 
-- four modes, loop, sampler, pad and melody, sharing the same sixteen pads;
-- an MPD218 knob selects the mode, a quarter of its travel each, with a
+- five modes—loop, sampler, pad, melody and files—sharing the same sixteen pads;
+- an MPD218 knob selects the mode in five equal zones, with a
   configurable dead band that sets how much rotation a change costs;
 - only sampler mode records; loop mode manages sample assignments;
 - both banks are always mixed, so a running loop survives any mode change;
 - the bank that received a pad press also receives its release, so changing
   mode mid-gesture cannot strand a recording;
 - disabling the knob leaves the startup mode pinned to pad.
+
+### Files mode
+
+- a short pad tap deletes that pad's recorded sample and removes any loop
+  assignments which referenced it;
+- holding any pad through the configured hold threshold deletes all recordings;
+- persistent sample files and the session manifest are updated immediately.
 
 ### Melody mode
 
@@ -56,6 +63,11 @@ This page summarises the capabilities currently implemented on the main developm
 ### Pad mode
 
 - all sixteen pads play the FluidSynth SoundFont;
+- startup selects configurable zero-based General MIDI program 32 (Acoustic
+  Bass by default) on every channel;
+- knob 4 selects programs 0-127 directly while pad mode is active;
+- mapped pad notes are routed to melodic MIDI channel 1, avoiding the fixed
+  percussion behavior of channel 10 on older FluidSynth releases;
 - pad notes are forwarded with their velocity rather than consumed;
 - loops and samples keep playing underneath;
 - a Note Off follows its own Note On, so a mode change mid-press cannot hang a

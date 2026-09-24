@@ -214,7 +214,9 @@ static void draw_beat_rail(MusicBoxDisplay *display)
  */
 static void draw_pad_grid(MusicBoxDisplay *display)
 {
-    const unsigned int mode = (unsigned int)display->mode;
+    const unsigned int mode = display->mode == MUSIC_BOX_MODE_FILES
+        ? (unsigned int)MUSIC_BOX_MODE_SAMPLER
+        : (unsigned int)display->mode;
     const uint16_t busy =
         (uint16_t)(display->armed_slots[mode] | display->recording_slots[mode]);
 
@@ -260,9 +262,11 @@ static uint16_t all_recording_slots(const MusicBoxDisplay *display)
 static void draw_status_column(MusicBoxDisplay *display)
 {
     static const char *const labels[MUSIC_BOX_MODE_COUNT] = {
-        "LOOP", "SAMPLER", "PAD", "MELODY"
+        "LOOP", "SAMPLER", "PAD", "MELODY", "FILES"
     };
     const unsigned int mode = (unsigned int)display->mode;
+    const unsigned int state_mode = display->mode == MUSIC_BOX_MODE_FILES
+        ? (unsigned int)MUSIC_BOX_MODE_SAMPLER : mode;
 
     /* The rule runs the full height so the right half reads as one column. */
     fill_rectangle(display, STATUS_RULE_X, 0u, 1u, MUSIC_BOX_DISPLAY_HEIGHT);
@@ -281,9 +285,9 @@ static void draw_status_column(MusicBoxDisplay *display)
                        display->recording_source == MUSIC_BOX_RECORD_MONITOR
                            ? "MON" : "MIC",
                        first_slot(recording));
-    else if (display->armed_slots[mode] != 0u)
+    else if (display->armed_slots[state_mode] != 0u)
         (void)snprintf(state, sizeof(state), "ARM %u",
-                       first_slot(display->armed_slots[mode]));
+                       first_slot(display->armed_slots[state_mode]));
     else if (display->mode == MUSIC_BOX_MODE_LOOP ||
              display->mode == MUSIC_BOX_MODE_MELODY)
         (void)snprintf(state, sizeof(state), "S%u",
@@ -293,6 +297,11 @@ static void draw_status_column(MusicBoxDisplay *display)
            the K4 trim target, which needs to remain visible before K5/K6 move. */
         (void)snprintf(state, sizeof(state), "TRIM S%u",
                        (unsigned int)display->selected_sample + 1u);
+    else if (display->mode == MUSIC_BOX_MODE_FILES)
+        (void)snprintf(state, sizeof(state), "TAP/HOLD");
+    else if (display->mode == MUSIC_BOX_MODE_PAD)
+        (void)snprintf(state, sizeof(state), "PROG %u",
+                       (unsigned int)display->pad_program);
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
@@ -361,6 +370,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
     memset(display, 0, sizeof(*display));
     display->fd = -1;
     display->mode = MUSIC_BOX_MODE_PAD;
+    display->pad_program = config->soundfont_program;
     display->tempo_millibpm = config->tempo_millibpm;
     display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
     display->blink_on = true;
@@ -499,6 +509,16 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
     case MUSIC_BOX_EVENT_SAMPLE_BANK_FULL:
     case MUSIC_BOX_EVENT_RECORDING_BUSY:
         return;
+    case MUSIC_BOX_EVENT_SAMPLE_DELETED:
+        display->loaded_slots[MUSIC_BOX_MODE_SAMPLER] &= clear;
+        display->playing_slots[MUSIC_BOX_MODE_SAMPLER] &= clear;
+        display->loaded_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
+        display->playing_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
+        display->pending_stop_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
+        break;
+    case MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED:
+        display->pad_program = (uint8_t)event->value;
+        break;
     case MUSIC_BOX_EVENT_TRIM_CHANGED:
         display->trim_slot = event->slot;
         display->trim_start = (uint8_t)(event->value & 0xffu);

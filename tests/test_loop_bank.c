@@ -263,6 +263,31 @@ static void test_monitor_recording_uses_first_empty_slot(void)
     music_box_loop_bank_destroy(&bank);
 }
 
+static void test_delete_sample_clears_assignments(void)
+{
+    MusicBoxEventQueue events;
+    music_box_event_queue_init(&events);
+    MusicBoxLoopBank samples;
+    MusicBoxLoopBank loops;
+    assert(music_box_loop_bank_init(&samples, 100u, 1u, MUSIC_BOX_QUANTIZE_OFF,
+                                    MUSIC_BOX_MODE_SAMPLER, 0u, &events));
+    assert(music_box_loop_bank_init(&loops, 100u, 1u, MUSIC_BOX_QUANTIZE_BAR,
+                                    MUSIC_BOX_MODE_LOOP, 0u, &events));
+    samples.slots[3].recorded_frames = 10u;
+    samples.slots[3].trim_end = 10u;
+    samples.slots[3].state = MUSIC_BOX_LOOP_STOPPED;
+    assert(music_box_loop_bank_assign(&loops, 1u, &samples, 3u));
+    assert(music_box_loop_bank_assign(&loops, 5u, &samples, 3u));
+    assert(music_box_loop_bank_delete_sample(&samples, &loops, 3u));
+    assert(samples.slots[3].state == MUSIC_BOX_LOOP_EMPTY);
+    assert(samples.slots[3].recorded_frames == 0u);
+    assert(loops.slots[1].assigned_sample == UINT8_MAX);
+    assert(loops.slots[5].assigned_sample == UINT8_MAX);
+    assert(!music_box_loop_bank_delete_sample(&samples, &loops, 3u));
+    music_box_loop_bank_destroy(&loops);
+    music_box_loop_bank_destroy(&samples);
+}
+
 int main(void)
 {
     test_loop_mode();
@@ -270,6 +295,7 @@ int main(void)
     test_sampler_mode();
     test_sampler_preroll_drops_its_own_playback();
     test_monitor_recording_uses_first_empty_slot();
+    test_delete_sample_clears_assignments();
     puts("loop bank tests passed");
     return 0;
 }

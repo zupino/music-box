@@ -35,6 +35,7 @@ int main(void)
     assert(config.sample_select_cc == 13u);
     assert(config.trim_start_cc == 14u);
     assert(config.trim_end_cc == 15u);
+    assert(config.soundfont_program == 32u);
     assert(config.noise_gate_enabled);
     assert(!config.display_rotate_180);
     assert(config.session_persistence_enabled);
@@ -58,7 +59,7 @@ int main(void)
     assert(load("mode_cc_hysteresis=0\n", &config));
     assert(config.mode_cc_hysteresis == 0u);
     /* Wider than half a zone would make the middle mode unreachable. */
-    assert(!load("mode_cc_hysteresis=17\n", &config));
+    assert(!load("mode_cc_hysteresis=13\n", &config));
 
     assert(load("loop_select_cc=20\nsample_select_cc=21\ntrim_start_cc=22\n"
                 "trim_end_cc=23\nmonitor_modifier_enabled=true\n"
@@ -67,6 +68,9 @@ int main(void)
                 &config));
     assert(config.loop_select_cc == 20u && config.loop_panic_cc == 25u);
     assert(config.monitor_modifier_enabled && config.loop_panic_enabled);
+    assert(load("soundfont_program=40\n", &config));
+    assert(config.soundfont_program == 40u);
+    assert(!load("soundfont_program=128\n", &config));
 
     assert(load("display_rotate_180=true\n", &config));
     assert(config.display_rotate_180);
@@ -75,29 +79,31 @@ int main(void)
     assert(!config.session_persistence_enabled);
     assert(strcmp(config.session_directory, "/tmp/music-box-session") == 0);
 
-    /* The knob's travel is four zones: loop, sampler, pad, melody. */
+    /* The knob's travel is five zones: loop, sampler, pad, melody, files. */
     assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 0u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 48u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 80u, 2u) == MUSIC_BOX_MODE_PAD);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 127u, 2u) == MUSIC_BOX_MODE_MELODY);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 38u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 64u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 89u, 2u) == MUSIC_BOX_MODE_MELODY);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 127u, 2u) == MUSIC_BOX_MODE_FILES);
 
     /* Each switch costs only the dead band, and inside it the mode holds. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 29u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 31u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 33u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 65u, 2u) == MUSIC_BOX_MODE_PAD);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 97u, 2u) == MUSIC_BOX_MODE_MELODY);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 25u, 2u) == MUSIC_BOX_MODE_LOOP);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 27u, 2u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 53u, 2u) == MUSIC_BOX_MODE_PAD);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 78u, 2u) == MUSIC_BOX_MODE_MELODY);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_MELODY, 104u, 2u) == MUSIC_BOX_MODE_FILES);
 
     /* Every position resolves when the dead band is off, and a switch point
        itself belongs to the lower zone. */
     for (unsigned int value = 0u; value <= 127u; ++value)
         assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, (uint8_t)value, 0u) ==
-               (value <= 31u ? MUSIC_BOX_MODE_LOOP
-                : value <= 63u ? MUSIC_BOX_MODE_SAMPLER
-                : value <= 95u ? MUSIC_BOX_MODE_PAD : MUSIC_BOX_MODE_MELODY));
+               (value <= 25u ? MUSIC_BOX_MODE_LOOP
+                : value <= 51u ? MUSIC_BOX_MODE_SAMPLER
+                : value <= 76u ? MUSIC_BOX_MODE_PAD
+                : value <= 102u ? MUSIC_BOX_MODE_MELODY : MUSIC_BOX_MODE_FILES));
 
     /* The middle zone survives the widest dead band the parser accepts. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 47u, 16u) == MUSIC_BOX_MODE_SAMPLER);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 38u, 12u) == MUSIC_BOX_MODE_SAMPLER);
 
     puts("config tests passed");
     return 0;
