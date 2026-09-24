@@ -22,4 +22,5 @@ exec /usr/bin/fluidsynth \
     -g "$FLUIDSYNTH_GAIN" \
     -o audio.jack.autoconnect=0 \
     -o audio.jack.id=fluidsynth \
+    -o synth.drums-channel.active=no \
     "$MUSIC_BOX_SOUNDFONT" < /dev/zero
