@@ -299,6 +299,9 @@ static void draw_status_column(MusicBoxDisplay *display)
                        (unsigned int)display->selected_sample + 1u);
     else if (display->mode == MUSIC_BOX_MODE_FILES)
         (void)snprintf(state, sizeof(state), "TAP/HOLD");
+    else if (display->mode == MUSIC_BOX_MODE_PAD)
+        (void)snprintf(state, sizeof(state), "PROG %u",
+                       (unsigned int)display->pad_program);
     if (state[0] != '\0')
         draw_text(display, STATUS_TEXT_X, 2u * STATUS_LINE_PITCH, state);
 }
@@ -367,6 +370,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
     memset(display, 0, sizeof(*display));
     display->fd = -1;
     display->mode = MUSIC_BOX_MODE_PAD;
+    display->pad_program = config->soundfont_program;
     display->tempo_millibpm = config->tempo_millibpm;
     display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
     display->blink_on = true;
@@ -511,6 +515,9 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->loaded_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
         display->playing_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
         display->pending_stop_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
+        break;
+    case MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED:
+        display->pad_program = (uint8_t)event->value;
         break;
     case MUSIC_BOX_EVENT_TRIM_CHANGED:
         display->trim_slot = event->slot;

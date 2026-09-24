@@ -1,5 +1,21 @@
 # Troubleshooting
 
+## Pad instrument does not change
+
+The running service reads `/etc/music-box/music-box.conf`, not the copy under
+the Git checkout. Check the exact spelling of the installed path and confirm
+the zero-based program that the process loaded:
+
+```sh
+grep '^soundfont_program=' /etc/music-box/music-box.conf
+sudo systemctl restart music-box.service
+journalctl -u music-box.service -n 30 --no-pager | grep 'Pad SoundFont program'
+```
+
+An MPD218 may send on MIDI channel 10, which FluidSynth initializes as a drum
+channel. Music Box explicitly selects melodic SoundFont bank 0 before applying
+`soundfont_program`, so channel 10 follows the configured instrument too.
+
 Run `music-box-check` for OS/kernel information, ALSA cards, service status, JACK connections and ALSA sequencer routes.
 
 ## No picture or display UI

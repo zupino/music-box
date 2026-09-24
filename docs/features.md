@@ -65,6 +65,7 @@ This page summarises the capabilities currently implemented on the main developm
 - all sixteen pads play the FluidSynth SoundFont;
 - startup selects configurable zero-based General MIDI program 32 (Acoustic
   Bass by default) on every channel;
+- knob 4 selects programs 0-127 directly while pad mode is active;
 - pad notes are forwarded with their velocity rather than consumed;
 - loops and samples keep playing underneath;
 - a Note Off follows its own Note On, so a mode change mid-press cannot hang a

@@ -13,6 +13,9 @@ static bool has_prefix(const char *text, const char *prefix)
     return strncmp(text, prefix, strlen(prefix)) == 0;
 }
 
+static void select_soundfont_program(snd_seq_t *sequencer, int output_port,
+                                     uint8_t program);
+
 static uint64_t monotonic_milliseconds(void)
 {
     struct timespec time;
@@ -129,6 +132,9 @@ static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *ev
                                                       midi->config.mode_cc_hysteresis);
     if (mode == midi->mode) return true;
     midi->mode = mode;
+    /* K4 changes meaning in pad mode, so the first position reported after a
+       mode transition must not be mistaken for a duplicate of its old role. */
+    midi->control_value_sent[1] = false;
     const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,
                                      .slot = 0u,
                                      .mode = (uint8_t)mode,
@@ -149,6 +155,35 @@ static bool handle_volume_controller(MusicBoxMidi *midi, const snd_seq_event_t *
     const int value = event->data.control.value;
     if (controller > 127u || value < 0 || value > 127) return false;
     return music_box_volume_handle_cc(midi->volume, (uint8_t)controller, (uint8_t)value);
+}
+
+static bool handle_pad_program_controller(MusicBoxMidi *midi,
+                                          snd_seq_t *sequencer,
+                                          int output_port,
+                                          const snd_seq_event_t *event)
+{
+    if (midi->mode != MUSIC_BOX_MODE_PAD ||
+        event->type != SND_SEQ_EVENT_CONTROLLER ||
+        event->data.control.param != (unsigned int)midi->config.sample_select_cc)
+        return false;
+    const int raw = event->data.control.value;
+    if (raw < 0 || raw > 127) return true;
+    const uint8_t program = (uint8_t)raw;
+    /* K4 and sample selection share editor 1. Suppress the dense duplicate CC
+       stream produced by some absolute knobs. */
+    if (midi->control_value_sent[1] && midi->last_control_value[1] == program)
+        return true;
+    midi->control_value_sent[1] = true;
+    midi->last_control_value[1] = program;
+    midi->config.soundfont_program = program;
+    select_soundfont_program(sequencer, output_port, program);
+    const MusicBoxCommand command = {
+        .type = MUSIC_BOX_COMMAND_SET_PAD_PROGRAM,
+        .value = program,
+    };
+    if (!music_box_command_queue_push(midi->commands, &command))
+        fprintf(stderr, "MIDI command queue full; pad program change dropped\n");
+    return true;
 }
 
 static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_port, snd_seq_event_t *event)
@@ -183,6 +218,7 @@ static void handle_event(MusicBoxMidi *midi, snd_seq_t *sequencer, int output_po
         if (!forward) return;
     }
     if (handle_mode_controller(midi, event)) return;
+    if (handle_pad_program_controller(midi, sequencer, output_port, event)) return;
     if (queue_control_command(midi, event)) return;
     if (handle_volume_controller(midi, event)) return;
     snd_seq_ev_set_source(event, (unsigned char)output_port);
@@ -232,6 +268,24 @@ static void select_soundfont_program(snd_seq_t *sequencer, int output_port,
 {
     for (unsigned int channel = 0u; channel < 16u; ++channel) {
         snd_seq_event_t event;
+        /* The MPD218 is commonly configured on MIDI channel 10. FluidSynth
+           starts that channel on percussion bank 128, where a Program Change
+           alone merely chooses another drum kit. Select melodic bank 0 first
+           so soundfont_program works consistently on every controller
+           channel, including channel 10. */
+        snd_seq_ev_clear(&event);
+        snd_seq_ev_set_source(&event, (unsigned char)output_port);
+        snd_seq_ev_set_subs(&event);
+        snd_seq_ev_set_direct(&event);
+        event.type = SND_SEQ_EVENT_CONTROLLER;
+        event.data.control.channel = (unsigned char)channel;
+        event.data.control.param = 0u;
+        event.data.control.value = 0;
+        (void)snd_seq_event_output_direct(sequencer, &event);
+
+        event.data.control.param = 32u;
+        (void)snd_seq_event_output_direct(sequencer, &event);
+
         snd_seq_ev_clear(&event);
         snd_seq_ev_set_source(&event, (unsigned char)output_port);
         snd_seq_ev_set_subs(&event);

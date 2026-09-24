@@ -106,6 +106,10 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
     case MUSIC_BOX_EVENT_SAMPLE_DELETED:
         printf("Sample %u: deleted\n", slot);
         break;
+    case MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED:
+        printf("Pad SoundFont program: %llu (zero-based)\n",
+               (unsigned long long)event->value);
+        break;
     default:
         break;
     }
@@ -200,6 +204,8 @@ int main(int argc, char **argv)
     printf("Pads: %zu of %u mapped, hold %u ms to record a sample\n",
            pads, (unsigned int)MUSIC_BOX_LOOP_COUNT,
            (unsigned int)config.pad_hold_milliseconds);
+    printf("Pad SoundFont program: %u (zero-based), melodic bank 0\n",
+           (unsigned int)config.soundfont_program);
     /* Sampler buffers are reserved up front; loop tracks reference them. */
     const double megabytes_per_second =
         (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;

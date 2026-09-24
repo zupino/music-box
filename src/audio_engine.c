@@ -332,6 +332,13 @@ static void process_commands(MusicBoxAudioEngine *engine)
         case MUSIC_BOX_COMMAND_STOP_ALL_LOOPS:
             music_box_loop_bank_stop_all(&engine->loop_bank);
             break;
+        case MUSIC_BOX_COMMAND_SET_PAD_PROGRAM:
+            (void)music_box_event_queue_push(engine->events, &(MusicBoxEvent){
+                .type = MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED,
+                .slot = 0u,
+                .bank = (uint8_t)MUSIC_BOX_MODE_PAD,
+                .value = command.value});
+            break;
         default:
             break;
         }
