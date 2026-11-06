@@ -56,6 +56,20 @@ static bool queue_control_command(MusicBoxMidi *midi, const snd_seq_event_t *eve
     MusicBoxCommand command = {.slot = 0u, .mode = 0u, .value = (uint8_t)raw,
                                .recording_source = 0u, .tempo_millibpm = 0u};
     unsigned int editor = 4u;
+    /* Wave controls take precedence over global monitor recording and editors. */
+    if (midi->mode == MUSIC_BOX_MODE_WAVE) {
+        const uint8_t controls[] = {midi->config.loop_select_cc,
+            midi->config.sample_select_cc, midi->config.trim_start_cc,
+            midi->config.trim_end_cc};
+        for (uint8_t parameter = 0u; parameter < 4u; ++parameter) {
+            if (cc != controls[parameter]) continue;
+            command.type = MUSIC_BOX_COMMAND_SET_WAVE_PARAMETER;
+            command.slot = parameter;
+            if (!music_box_command_queue_push(midi->commands, &command))
+                fprintf(stderr, "MIDI command queue full; wave control dropped\n");
+            return true;
+        }
+    }
     if (cc == (unsigned int)midi->config.loop_select_cc) {
         const uint64_t now = monotonic_milliseconds();
         /* An absolute knob emits a value for every small step. Treat values
@@ -134,7 +148,7 @@ static bool handle_mode_controller(MusicBoxMidi *midi, const snd_seq_event_t *ev
     midi->mode = mode;
     /* K4 changes meaning in pad mode, so the first position reported after a
        mode transition must not be mistaken for a duplicate of its old role. */
-    midi->control_value_sent[1] = false;
+    memset(midi->control_value_sent, 0, sizeof(midi->control_value_sent));
     const MusicBoxCommand command = {.type = MUSIC_BOX_COMMAND_SET_MODE,
                                      .slot = 0u,
                                      .mode = (uint8_t)mode,

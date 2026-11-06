@@ -18,10 +18,11 @@ typedef enum {
     MUSIC_BOX_MODE_SAMPLER,
     MUSIC_BOX_MODE_PAD,
     MUSIC_BOX_MODE_MELODY,
-    MUSIC_BOX_MODE_FILES
+    MUSIC_BOX_MODE_FILES,
+    MUSIC_BOX_MODE_WAVE
 } MusicBoxMode;
 
-#define MUSIC_BOX_MODE_COUNT 5u
+#define MUSIC_BOX_MODE_COUNT 6u
 
 typedef enum {
     MUSIC_BOX_COMMAND_PAD_PRESS = 1,
@@ -34,12 +35,13 @@ typedef enum {
     MUSIC_BOX_COMMAND_SELECT_SAMPLE,
     MUSIC_BOX_COMMAND_SET_TRIM_START,
     MUSIC_BOX_COMMAND_SET_TRIM_END,
-    /* One deliberate K3 movement in any mode starts or stops capture of the
+    /* One deliberate K3 movement outside wave mode starts or stops capture of the
        final speaker mix into the first empty sampler slot. */
     MUSIC_BOX_COMMAND_TOGGLE_MONITOR_RECORDING,
     MUSIC_BOX_COMMAND_STOP_ALL_LOOPS,
     /* Pad-mode K4 changed the live SoundFont program. */
-    MUSIC_BOX_COMMAND_SET_PAD_PROGRAM
+    MUSIC_BOX_COMMAND_SET_PAD_PROGRAM,
+    MUSIC_BOX_COMMAND_SET_WAVE_PARAMETER
 } MusicBoxCommandType;
 
 typedef enum {
@@ -84,7 +86,8 @@ typedef enum {
     MUSIC_BOX_EVENT_RESTORED_SAMPLE,
     MUSIC_BOX_EVENT_RESTORED_LOOP,
     MUSIC_BOX_EVENT_SAMPLE_DELETED,
-    MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED
+    MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED,
+    MUSIC_BOX_EVENT_WAVE_PARAMETER_CHANGED
 } MusicBoxEventType;
 
 typedef struct {

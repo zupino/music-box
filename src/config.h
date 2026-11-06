@@ -13,11 +13,12 @@
 /* MIDI notes are 0-127, so this cannot collide with a real mapping. */
 #define MUSIC_BOX_NOTE_UNMAPPED 0xffu
 
-/* The absolute mode knob is split into five approximately equal zones. */
-#define MUSIC_BOX_MODE_FIRST_SWITCH 25
-#define MUSIC_BOX_MODE_SECOND_SWITCH 51
-#define MUSIC_BOX_MODE_THIRD_SWITCH 76
-#define MUSIC_BOX_MODE_FOURTH_SWITCH 102
+/* The absolute mode knob is split into six approximately equal zones. */
+#define MUSIC_BOX_MODE_FIRST_SWITCH 21
+#define MUSIC_BOX_MODE_SECOND_SWITCH 42
+#define MUSIC_BOX_MODE_THIRD_SWITCH 64
+#define MUSIC_BOX_MODE_FOURTH_SWITCH 85
+#define MUSIC_BOX_MODE_FIFTH_SWITCH 106
 
 typedef struct {
     uint8_t loop_notes[MUSIC_BOX_LOOP_COUNT];

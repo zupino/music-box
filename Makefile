@@ -14,6 +14,7 @@ SOURCES = \
 	src/transport.c \
 	src/loop_bank.c \
 	src/melody.c \
+	src/wave.c \
 	src/echo_cancel.c \
 	src/noise_gate.c \
 	src/session_store.c \
@@ -32,7 +33,11 @@ TEST_BINS = \
 	build/test_echo_cancel \
 	build/test_noise_gate \
 	build/test_session_store \
-	build/test_volume
+	build/test_volume \
+	build/test_wave \
+	build/test_wave_midi \
+	build/test_wave_display \
+	build/test_wave_engine
 
 .PHONY: all clean install test
 
@@ -87,3 +92,15 @@ install: music-box
 clean:
 	rm -f music-box $(OBJECTS)
 	rm -rf build
+
+build/test_wave: tests/test_wave.c src/wave.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $^ -lm
+
+build/test_wave_midi: tests/test_wave_midi.c src/midi.c src/config.c src/volume.c src/rt_queue.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $(filter-out src/midi.c,$^) -lasound -lpthread -lm
+
+build/test_wave_display: tests/test_wave_display.c src/display.c src/wave.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $(filter-out src/display.c,$^) -lm
+
+build/test_wave_engine: tests/test_wave_engine.c $(filter-out src/main.c src/midi.c src/display.c,$(SOURCES)) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -std=c11 -o $@ $(filter-out src/audio_engine.c,$^) $(LDLIBS)

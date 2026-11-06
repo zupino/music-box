@@ -3,6 +3,7 @@
 #define MUSIC_BOX_DISPLAY_H
 
 #include "config.h"
+#include "wave.h"
 #include "rt_queue.h"
 
 #include <stdbool.h>
@@ -28,6 +29,7 @@ typedef struct {
     uint8_t selected_loop;
     uint8_t selected_sample;
     uint8_t pad_program;
+    uint8_t wave_parameters[4];
     /* Pads with a note assigned; the rest are left blank on the grid. */
     uint16_t mapped_slots;
     uint16_t recording_slots[MUSIC_BOX_MODE_COUNT];

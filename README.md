@@ -29,7 +29,7 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 - sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
 - sampler-only recording from either cleaned microphones or the speaker monitor;
 - sample assignment to loop tracks, with bar-anchored starts and repeats;
-- four performance modes on the same pads: loop, sampler, pad and melody;
+- six performance modes on the same pads: loop, sampler, pad, melody, files and wave;
 - sampler mode gives each pad a one-shot recording of its own;
 - pad mode plays the FluidSynth SoundFont straight from the sixteen pads;
 - melody mode plays the K4-selected sample chromatically around PAD 9;
@@ -74,9 +74,9 @@ FluidSynth is routed through Music Box rather than directly to the physical play
 
 ## Controls
 
-All sixteen pads, notes 52 to 67, drive four performance modes. Knob 2 (K2,
-bank A, CC 9 by default) chooses between them, a quarter of its travel each:
-loop, then sampler, pad and melody.
+All sixteen pads, notes 52 to 67, drive six performance modes. Knob 2 (K2,
+bank A, CC 9 by default) chooses between them, approximately a sixth of its travel each:
+loop, sampler, pad, melody, files and wave.
 
 Pads are numbered the way the MPD218 labels them, top-left first. In the
 factory bank-B preset pad 1 is note 64 and pad 16 is note 55 because MIDI notes
@@ -156,6 +156,39 @@ semitones below it, and PAD 16 is seven semitones above it. Voices are
 polyphonic, and pitch shifting uses resampling, so lower notes last longer and
 higher notes finish sooner.
 
+### Wave mode
+
+Wave is a polyphonic synthesizer independent of FluidSynth and recorded samples.
+Hold a pad to sustain a note; release it to fade the voice out. PAD 9 is middle C
+(C4, 261.63 Hz), PAD 1 is eight semitones below, and PAD 16 seven above. Multiple
+pads can sound together, and changing mode preserves held voices and release tails.
+Loops and samples continue underneath.
+
+| Knob | Wave control |
+|---|---|
+| K1 | Existing hardware volume control |
+| K2 | Mode selection |
+| K3 | Sine, triangle, square, saw (four equal zones) |
+| K4 | Low-pass cutoff, logarithmic 40 Hz–16 kHz |
+| K5 | Resonance, Q 0.5–8 |
+| K6 | Linear amp release, logarithmic 20 ms–4 s |
+
+The controls reuse the configured `loop_select_cc`, `sample_select_cc`,
+`trim_start_cc`, and `trim_end_cc`. K3 edits the waveform rather than toggling
+monitor recording in this mode. Notes have a fixed 5 ms attack. Filter changes
+are smoothed; square and saw discontinuities use PolyBLEP antialiasing.
+
+The OLED updates as controls move. It shows the filtered waveform at middle C
+on the left and an amp-release envelope over a fixed four-second window on the
+right. This is a parameter preview, not an oscilloscope of the combined output.
+The footer shows `C` cutoff in Hz, `Q` filter resonance (0.5–8.0), and `R`
+release in milliseconds. K1 temporarily shows the usual volume overlay.
+
+Wave settings start from sine, cutoff knob 100, resonance 0 and release knob 45.
+They are held in memory only. Saving generated waves to sampler slots and further
+envelope controls are deferred. Existing five-mode K2 positions change with the
+new six-zone mapping; `mode_cc_hysteresis` now accepts 0–10 (default 2).
+
 ### Active-session persistence
 
 Every completed recording is written immediately to `session_directory`, then
@@ -173,21 +206,23 @@ stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
 it is moved, so a freshly started service is always in pad mode regardless of
-where the knob is parked. Its travel splits into four zones with a switch at
+where the knob is parked. Its travel splits into six zones (ranges below with hysteresis disabled) with a switch at
 each boundary:
 
 | Knob | Mode |
 |---|---|
-| 0–31 | loop |
-| 32–63 | sampler |
-| 64–95 | pad |
-| 96–127 | melody |
+| 0–21 | loop |
+| 22–42 | sampler |
+| 43–64 | pad |
+| 65–85 | melody |
+| 86–106 | files |
+| 107–127 | wave |
 
 Each switch has a dead band of `mode_cc_hysteresis` counts either side that
 holds the current mode. That dead band is the only rotation a mode change costs
 once the knob is near a switch — 2 counts out of 127 by default, roughly 8
 degrees on the MPD218 pot — so lower it for a lighter switch and raise it if a
-resting knob starts flapping on its own jitter. It is capped at 16, because a
+resting knob starts flapping on its own jitter. It is capped at 10, because a
 dead band wider than half a zone would make sampler mode unreachable.
 
 ## Configuration
@@ -236,7 +271,7 @@ memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
 `mode_control_enabled=false` pins the box to pad mode.
 
 `quantize` applies to loop mode only. Sampler and monitor recording are always
-unquantized. In any mode, move K3 in either direction to start capturing the
+unquantized. Outside wave mode, move K3 in either direction to start capturing the
 final speaker mix into the first empty sampler slot; pause, then move K3 again
 in either direction to stop. A continuous sweep is one gesture, not many
 toggles. The OLED shows `REC MON Sx` across mode changes. The completed take is
@@ -267,8 +302,8 @@ status text, and the beat runs as a rail of four dots down the right edge with
 the current one filled. Each column then gets the panel's full height: the pad
 cells are square, and mode, tempo and the global record/source state each get
 their own line instead of sharing one row. `REC MIC Sx` identifies a sampler
-pad-hold recording; `REC MON Sx` remains visible in every mode while K3 monitor
-capture is active.
+pad-hold recording; `REC MON Sx` remains visible while monitor capture is active (wave mode
+uses a compact `REC MON` header above the waveform).
 
 The major column gutters and outer margins are 3 pixels, while the square pad
 cells use a tighter 2-pixel horizontal gap. The dots share the map's row pitch,

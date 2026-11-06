@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <linux/i2c-dev.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +34,13 @@ static const Glyph font[] = {
     {'C', {0x3e, 0x41, 0x41, 0x41, 0x22}},
     {'D', {0x7f, 0x41, 0x41, 0x22, 0x1c}},
     {'E', {0x7f, 0x49, 0x49, 0x49, 0x41}},
+    {'F', {0x7f, 0x09, 0x09, 0x09, 0x01}},
+    {'H', {0x7f, 0x08, 0x08, 0x08, 0x7f}},
+    {'Q', {0x3e, 0x41, 0x51, 0x21, 0x5e}},
+    {'T', {0x01, 0x01, 0x7f, 0x01, 0x01}},
+    {'W', {0x3f, 0x40, 0x38, 0x40, 0x3f}},
+    {'.', {0x00, 0x60, 0x60, 0x00, 0x00}},
+    {'/', {0x20, 0x10, 0x08, 0x04, 0x02}},
     {'I', {0x00, 0x41, 0x7f, 0x41, 0x00}},
     {'L', {0x7f, 0x40, 0x40, 0x40, 0x40}},
     {'M', {0x7f, 0x02, 0x0c, 0x02, 0x7f}},
@@ -262,7 +270,7 @@ static uint16_t all_recording_slots(const MusicBoxDisplay *display)
 static void draw_status_column(MusicBoxDisplay *display)
 {
     static const char *const labels[MUSIC_BOX_MODE_COUNT] = {
-        "LOOP", "SAMPLER", "PAD", "MELODY", "FILES"
+        "LOOP", "SAMPLER", "PAD", "MELODY", "FILES", "WAVE"
     };
     const unsigned int mode = (unsigned int)display->mode;
     const unsigned int state_mode = display->mode == MUSIC_BOX_MODE_FILES
@@ -346,13 +354,62 @@ static void draw_volume_screen(MusicBoxDisplay *display)
                    (VOLUME_FILL_WIDTH * percent + 50u) / 100u, 9u);
 }
 
+/* A filtered, middle-C reference cycle plus a four-second release envelope.
+   This is a parameter preview, independent of the notes currently held. It runs
+   on the UI thread; no framebuffer or I2C work enters the audio callback. */
+static void draw_wave_screen(MusicBoxDisplay *display)
+{
+    static const char *const names[] = {"SIN", "TRI", "SQR", "SAW"};
+    char text[24];
+    (void)snprintf(text, sizeof(text), "%s %s", all_recording_slots(display) ? "REC MON" : "WAVE",
+                   names[display->wave_parameters[0] / 32u]);
+    draw_text(display, 2u, 0u, text);
+    MusicBoxWave preview;
+    music_box_wave_init(&preview, 48000u);
+    for (uint8_t p = 0u; p < 4u; ++p)
+        music_box_wave_set(&preview, p, display->wave_parameters[p]);
+    preview.g = preview.target_g;
+    preview.damping = preview.target_damping;
+    music_box_wave_press(&preview, 8u);
+    for (unsigned int frame = 0u; frame < 4096u; ++frame)
+        (void)music_box_wave_sample(&preview);
+    int previous = 16;
+    for (unsigned int x = 0u; x < 78u; ++x) {
+        float sample = 0.0f;
+        const unsigned int end = (x + 1u) * 367u / 78u;
+        const unsigned int start = x * 367u / 78u;
+        for (unsigned int frame = start; frame < end; ++frame)
+            sample = music_box_wave_sample(&preview);
+        int y = 16 - (int)lroundf(sample * 100.0f);
+        if (y < 9) y = 9;
+        if (y > 22) y = 22;
+        const int top = y < previous ? y : previous;
+        const int bottom = y > previous ? y : previous;
+        fill_rectangle(display, x + 2u, (unsigned int)top, 1u,
+                       (unsigned int)(bottom - top + 1));
+        previous = y;
+    }
+    const float release = music_box_wave_release_seconds(display->wave_parameters[3]);
+    for (unsigned int x = 0u; x < 33u; ++x) {
+        float level = 1.0f - ((float)x / 32.0f * 4.0f) / release;
+        if (level < 0.0f) level = 0.0f;
+        set_pixel(display, 84u + x, 22u - (unsigned int)(12.0f * level));
+    }
+    (void)snprintf(text, sizeof(text), "C%u Q%.1f R%u",
+        (unsigned int)music_box_wave_cutoff(display->wave_parameters[1]),
+        0.5 + 7.5 * (double)display->wave_parameters[2] / 127.0,
+        (unsigned int)(release * 1000.0f));
+    draw_text(display, 2u, 25u, text);
+}
+
 static bool refresh(MusicBoxDisplay *display)
 {
     if (!display->enabled) return true;
     memset(display->pixels, 0, sizeof(display->pixels));
     /* Source confirmation is most important at the imprecise K3 toggle, so a
        temporary trim or volume overlay must never hide an active recording. */
-    if (all_recording_slots(display) != 0u) draw_status_screen(display);
+    if (display->mode == MUSIC_BOX_MODE_WAVE && !display->volume_visible) draw_wave_screen(display);
+    else if (all_recording_slots(display) != 0u) draw_status_screen(display);
     else if (display->volume_visible) draw_volume_screen(display);
     else if (display->trim_visible) draw_trim_screen(display);
     else draw_status_screen(display);
@@ -371,6 +428,8 @@ bool music_box_display_init(MusicBoxDisplay *display,
     display->fd = -1;
     display->mode = MUSIC_BOX_MODE_PAD;
     display->pad_program = config->soundfont_program;
+    display->wave_parameters[1] = 100u;
+    display->wave_parameters[3] = 45u;
     display->tempo_millibpm = config->tempo_millibpm;
     display->volume_hold_milliseconds = config->display_volume_seconds * 1000u;
     display->blink_on = true;
@@ -487,7 +546,9 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->playing_slots[bank] &= clear;
         break;
     case MUSIC_BOX_EVENT_MODE_CHANGED:
+        if (event->value >= MUSIC_BOX_MODE_COUNT) return;
         display->mode = (MusicBoxMode)event->value;
+        display->trim_visible = false;
         break;
     case MUSIC_BOX_EVENT_TEMPO_CHANGED:
         display->tempo_millibpm = (uint32_t)event->value;
@@ -515,6 +576,10 @@ void music_box_display_handle_event(MusicBoxDisplay *display,
         display->loaded_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
         display->playing_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
         display->pending_stop_slots[MUSIC_BOX_MODE_LOOP] &= (uint16_t)~event->value;
+        break;
+    case MUSIC_BOX_EVENT_WAVE_PARAMETER_CHANGED:
+        if (event->slot >= 4u || event->value > 127u) return;
+        display->wave_parameters[event->slot] = (uint8_t)event->value;
         break;
     case MUSIC_BOX_EVENT_PAD_PROGRAM_CHANGED:
         display->pad_program = (uint8_t)event->value;

@@ -31,7 +31,7 @@ static void print_event(const MusicBoxEvent *event, uint32_t sample_rate)
 {
     const unsigned int slot = (unsigned int)event->slot + 1u;
     static const char *const banks[MUSIC_BOX_MODE_COUNT] = {
-        "Loop", "Sample", "Pad", "Melody", "Files"
+        "Loop", "Sample", "Pad", "Melody", "Files", "Wave"
     };
     const char *bank = banks[event->bank < MUSIC_BOX_MODE_COUNT ? event->bank : 0u];
     switch (event->type) {

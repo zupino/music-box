@@ -79,32 +79,21 @@ int main(void)
     assert(!config.session_persistence_enabled);
     assert(strcmp(config.session_directory, "/tmp/music-box-session") == 0);
 
-    /* The knob's travel is five zones: loop, sampler, pad, melody, files. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 0u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 38u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 64u, 2u) == MUSIC_BOX_MODE_PAD);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 89u, 2u) == MUSIC_BOX_MODE_MELODY);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 127u, 2u) == MUSIC_BOX_MODE_FILES);
-
-    /* Each switch costs only the dead band, and inside it the mode holds. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 25u, 2u) == MUSIC_BOX_MODE_LOOP);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 27u, 2u) == MUSIC_BOX_MODE_SAMPLER);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_SAMPLER, 53u, 2u) == MUSIC_BOX_MODE_PAD);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 78u, 2u) == MUSIC_BOX_MODE_MELODY);
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_MELODY, 104u, 2u) == MUSIC_BOX_MODE_FILES);
-
-    /* Every position resolves when the dead band is off, and a switch point
-       itself belongs to the lower zone. */
-    for (unsigned int value = 0u; value <= 127u; ++value)
-        assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, (uint8_t)value, 0u) ==
-               (value <= 25u ? MUSIC_BOX_MODE_LOOP
-                : value <= 51u ? MUSIC_BOX_MODE_SAMPLER
-                : value <= 76u ? MUSIC_BOX_MODE_PAD
-                : value <= 102u ? MUSIC_BOX_MODE_MELODY : MUSIC_BOX_MODE_FILES));
-
-    /* The middle zone survives the widest dead band the parser accepts. */
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_LOOP, 38u, 12u) == MUSIC_BOX_MODE_SAMPLER);
-
+    /* Six zones, with hysteresis around all five boundaries. */
+    const unsigned int edges[] = {21, 42, 64, 85, 106};
+    for (unsigned int value = 0; value < 128; ++value) {
+        unsigned int mode = 0;
+        while (mode < 5 && value > edges[mode]) ++mode;
+        assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, (uint8_t)value, 0) == (MusicBoxMode)mode);
+    }
+    for (unsigned int i = 0; i < 5; ++i) {
+        assert(music_box_mode_for_knob((MusicBoxMode)i, (uint8_t)edges[i], 2) == (MusicBoxMode)i);
+        assert(music_box_mode_for_knob((MusicBoxMode)i, (uint8_t)(edges[i]+2), 2) == (MusicBoxMode)(i+1));
+        assert(music_box_mode_for_knob((MusicBoxMode)(i+1), (uint8_t)(edges[i]-2), 2) == (MusicBoxMode)i);
+    }
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 127, 2) == MUSIC_BOX_MODE_WAVE);
+    assert(load("mode_cc_hysteresis=10\n", &config));
+    assert(!load("mode_cc_hysteresis=11\n", &config));
     puts("config tests passed");
     return 0;
 }
