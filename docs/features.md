@@ -28,14 +28,14 @@ This page summarises the capabilities currently implemented on the main developm
 
 ### Performance modes
 
-- five modes—loop, sampler, pad, melody and files—sharing the same sixteen pads;
-- an MPD218 knob selects the mode in five equal zones, with a
+- six modes—loop, wave, sampler, melody, pad and files—sharing the same sixteen pads;
+- an MPD218 knob selects the mode in six equal zones, with a
   configurable dead band that sets how much rotation a change costs;
 - only sampler mode records; loop mode manages sample assignments;
 - both banks are always mixed, so a running loop survives any mode change;
 - the bank that received a pad press also receives its release, so changing
   mode mid-gesture cannot strand a recording;
-- disabling the knob leaves the startup mode pinned to pad.
+- disabling the knob leaves the startup mode pinned to wave.
 
 ### Files mode
 

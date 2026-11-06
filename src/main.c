@@ -210,12 +210,12 @@ int main(int argc, char **argv)
     const double megabytes_per_second =
         (double)music_box_audio_engine_sample_rate(&engine) * 2.0 * sizeof(float) / 1.0e6;
     printf("Mode: %s at startup, reserving %.0f MB for %u sample slots of %u s\n",
-           music_box_mode_name(MUSIC_BOX_MODE_PAD),
+           music_box_mode_name(MUSIC_BOX_DEFAULT_MODE),
            (double)MUSIC_BOX_LOOP_COUNT * (double)config.max_sample_seconds *
                megabytes_per_second,
            (unsigned int)MUSIC_BOX_LOOP_COUNT, (unsigned int)config.max_sample_seconds);
     if (config.mode_control_enabled)
-        printf("Mode knob: CC %u selects loop, sampler, pad, melody or files, dead band +/-%u\n",
+        printf("Mode knob: CC %u selects loop, wave, sampler, melody, pad or files, dead band +/-%u\n",
                (unsigned int)config.mode_cc, (unsigned int)config.mode_cc_hysteresis);
     else
         printf("Mode knob: disabled\n");

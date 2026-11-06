@@ -426,7 +426,7 @@ bool music_box_display_init(MusicBoxDisplay *display,
 {
     memset(display, 0, sizeof(*display));
     display->fd = -1;
-    display->mode = MUSIC_BOX_MODE_PAD;
+    display->mode = MUSIC_BOX_DEFAULT_MODE;
     display->pad_program = config->soundfont_program;
     display->wave_parameters[1] = 100u;
     display->wave_parameters[3] = 45u;

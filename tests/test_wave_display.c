@@ -7,7 +7,10 @@ int main(void)
     const char *labels = "FILES WAVE SIN TRI SQR SAW C Q R TAP/HOLD";
     for (const char *c = labels; *c; ++c)
         if (*c != ' ') assert(glyph_for(*c) != font[0].columns);
-    MusicBoxDisplay d = {0};
+    MusicBoxDisplay d;
+    MusicBoxConfig config = {.display_enabled = false};
+    assert(music_box_display_init(&d, &config));
+    assert(d.mode == MUSIC_BOX_MODE_WAVE);
     d.enabled = true;
     d.mode = MUSIC_BOX_MODE_WAVE;
     d.wave_parameters[1] = 100;

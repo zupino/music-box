@@ -23,6 +23,7 @@ typedef enum {
 } MusicBoxMode;
 
 #define MUSIC_BOX_MODE_COUNT 6u
+#define MUSIC_BOX_DEFAULT_MODE MUSIC_BOX_MODE_WAVE
 
 typedef enum {
     MUSIC_BOX_COMMAND_PAD_PRESS = 1,

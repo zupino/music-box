@@ -452,7 +452,7 @@ bool music_box_audio_engine_init(MusicBoxAudioEngine *engine,
         fprintf(stderr, "Cannot connect to JACK (status 0x%x). Is music-box-jack running?\n", status);
         return false;
     }
-    engine->mode = MUSIC_BOX_MODE_PAD;
+    engine->mode = MUSIC_BOX_DEFAULT_MODE;
     engine->monitor_recording_slot = UINT8_MAX;
     music_box_melody_init(&engine->melody, events);
     music_box_wave_init(&engine->wave, jack_get_sample_rate(engine->client));

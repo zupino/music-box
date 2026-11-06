@@ -29,7 +29,7 @@ Run `aplay -l` before the driver step: skip that step when `wm8960soundcard` is 
 - sixteen independent loop slots, one per MPD218 pad, on notes 52–67;
 - sampler-only recording from either cleaned microphones or the speaker monitor;
 - sample assignment to loop tracks, with bar-anchored starts and repeats;
-- six performance modes on the same pads: loop, sampler, pad, melody, files and wave;
+- six performance modes on the same pads: loop, wave, sampler, melody, pad and files;
 - sampler mode gives each pad a one-shot recording of its own;
 - pad mode plays the FluidSynth SoundFont straight from the sixteen pads;
 - melody mode plays the K4-selected sample chromatically around PAD 9;
@@ -76,7 +76,7 @@ FluidSynth is routed through Music Box rather than directly to the physical play
 
 All sixteen pads, notes 52 to 67, drive six performance modes. Knob 2 (K2,
 bank A, CC 9 by default) chooses between them, approximately a sixth of its travel each:
-loop, sampler, pad, melody, files and wave.
+loop, wave, sampler, melody, pad and files.
 
 Pads are numbered the way the MPD218 labels them, top-left first. In the
 factory bank-B preset pad 1 is note 64 and pad 16 is note 55 because MIDI notes
@@ -101,7 +101,7 @@ after its tail. Stops continue to use the configured `quantize` boundary.
    out the current cycle, and the display hatches its cell to show it is on the
    way out. Pressing again before the boundary cancels the stop.
 
-The application starts in pad mode, so startup never turns a parked mode knob
+The application starts in wave mode, so startup never turns a parked mode knob
 into an unexpected recording or loop-control gesture.
 
 ### Sampler mode
@@ -205,18 +205,18 @@ captures any loop still running through the microphones unless the loops are
 stopped first.
 
 The mode knob is absolute, like the volume knob: the mode follows it only once
-it is moved, so a freshly started service is always in pad mode regardless of
+it is moved, so a freshly started service is always in wave mode regardless of
 where the knob is parked. Its travel splits into six zones (ranges below with hysteresis disabled) with a switch at
 each boundary:
 
 | Knob | Mode |
 |---|---|
 | 0–21 | loop |
-| 22–42 | sampler |
-| 43–64 | pad |
+| 22–42 | wave |
+| 43–64 | sampler |
 | 65–85 | melody |
-| 86–106 | files |
-| 107–127 | wave |
+| 86–106 | pad |
+| 107–127 | files |
 
 Each switch has a dead band of `mode_cc_hysteresis` counts either side that
 holds the current mode. That dead band is the only rotation a mode change costs
@@ -268,7 +268,7 @@ the shipped value. The startup banner prints the figure.
 triggering a sample and recording a new one, and it also sizes the pre-roll, so
 lowering it makes the gesture snappier while raising it costs a little more
 memory. The hold is timed on the MIDI thread at 5 ms resolution. Setting
-`mode_control_enabled=false` pins the box to pad mode.
+`mode_control_enabled=false` pins the box to wave mode.
 
 `quantize` applies to loop mode only. Sampler and monitor recording are always
 unquantized. Outside wave mode, move K3 in either direction to start capturing the

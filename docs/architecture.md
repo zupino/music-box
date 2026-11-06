@@ -334,8 +334,9 @@ A release received while still `ARMED_RECORD` is remembered. Recording begins at
 
 ## Performance modes
 
-The sixteen pads drive four modes chosen by the mode knob: loop, sampler, pad
-and melody. The sampler bank owns sixteen stereo buffers; loop tracks reference
+The sixteen pads drive six modes chosen by the mode knob: loop, wave, sampler,
+melody, pad and files. The service starts in wave mode, independently of the
+parked knob position, and follows K2 once it moves. The sampler bank owns sixteen stereo buffers; loop tracks reference
 assigned sampler storage rather than duplicating it. Both banks advance on
 every frame regardless of active mode, so loops survive mode changes.
 

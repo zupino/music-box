@@ -375,7 +375,7 @@ bool music_box_midi_start(MusicBoxMidi *midi, const MusicBoxConfig *config, Musi
     midi->config = *config;
     midi->commands = commands;
     midi->volume = volume;
-    midi->mode = MUSIC_BOX_MODE_PAD;
+    midi->mode = MUSIC_BOX_DEFAULT_MODE;
     atomic_init(&midi->running, true);
     if (pthread_create(&midi->thread, NULL, midi_thread, midi) != 0) {
         fprintf(stderr, "Cannot create MIDI thread\n");

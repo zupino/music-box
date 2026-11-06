@@ -81,17 +81,21 @@ int main(void)
 
     /* Six zones, with hysteresis around all five boundaries. */
     const unsigned int edges[] = {21, 42, 64, 85, 106};
+    const MusicBoxMode order[] = {MUSIC_BOX_MODE_LOOP, MUSIC_BOX_MODE_WAVE,
+        MUSIC_BOX_MODE_SAMPLER, MUSIC_BOX_MODE_MELODY, MUSIC_BOX_MODE_PAD,
+        MUSIC_BOX_MODE_FILES};
+    assert(MUSIC_BOX_DEFAULT_MODE == MUSIC_BOX_MODE_WAVE);
     for (unsigned int value = 0; value < 128; ++value) {
         unsigned int mode = 0;
         while (mode < 5 && value > edges[mode]) ++mode;
-        assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, (uint8_t)value, 0) == (MusicBoxMode)mode);
+        assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, (uint8_t)value, 0) == order[mode]);
     }
     for (unsigned int i = 0; i < 5; ++i) {
-        assert(music_box_mode_for_knob((MusicBoxMode)i, (uint8_t)edges[i], 2) == (MusicBoxMode)i);
-        assert(music_box_mode_for_knob((MusicBoxMode)i, (uint8_t)(edges[i]+2), 2) == (MusicBoxMode)(i+1));
-        assert(music_box_mode_for_knob((MusicBoxMode)(i+1), (uint8_t)(edges[i]-2), 2) == (MusicBoxMode)i);
+        assert(music_box_mode_for_knob(order[i], (uint8_t)edges[i], 2) == order[i]);
+        assert(music_box_mode_for_knob(order[i], (uint8_t)(edges[i]+2), 2) == order[i+1]);
+        assert(music_box_mode_for_knob(order[i+1], (uint8_t)(edges[i]-2), 2) == order[i]);
     }
-    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 127, 2) == MUSIC_BOX_MODE_WAVE);
+    assert(music_box_mode_for_knob(MUSIC_BOX_MODE_PAD, 127, 2) == MUSIC_BOX_MODE_FILES);
     assert(load("mode_cc_hysteresis=10\n", &config));
     assert(!load("mode_cc_hysteresis=11\n", &config));
     puts("config tests passed");

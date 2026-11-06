@@ -188,21 +188,22 @@ size_t music_box_config_mapped_pads(const MusicBoxConfig *config)
 MusicBoxMode music_box_mode_for_knob(MusicBoxMode current, uint8_t value,
                                      uint8_t hysteresis)
 {
+    static const MusicBoxMode order[MUSIC_BOX_MODE_COUNT] = {
+        MUSIC_BOX_MODE_LOOP, MUSIC_BOX_MODE_WAVE, MUSIC_BOX_MODE_SAMPLER,
+        MUSIC_BOX_MODE_MELODY, MUSIC_BOX_MODE_PAD, MUSIC_BOX_MODE_FILES
+    };
+    static const int switches[] = {
+        MUSIC_BOX_MODE_FIRST_SWITCH, MUSIC_BOX_MODE_SECOND_SWITCH,
+        MUSIC_BOX_MODE_THIRD_SWITCH, MUSIC_BOX_MODE_FOURTH_SWITCH,
+        MUSIC_BOX_MODE_FIFTH_SWITCH
+    };
     const int position = (int)value;
     const int dead_band = (int)hysteresis;
-    if (position <= MUSIC_BOX_MODE_FIRST_SWITCH - dead_band) return MUSIC_BOX_MODE_LOOP;
-    if (position >= MUSIC_BOX_MODE_FIRST_SWITCH + dead_band &&
-        position <= MUSIC_BOX_MODE_SECOND_SWITCH - dead_band)
-        return MUSIC_BOX_MODE_SAMPLER;
-    if (position >= MUSIC_BOX_MODE_SECOND_SWITCH + dead_band &&
-        position <= MUSIC_BOX_MODE_THIRD_SWITCH - dead_band)
-        return MUSIC_BOX_MODE_PAD;
-    if (position >= MUSIC_BOX_MODE_THIRD_SWITCH + dead_band &&
-        position <= MUSIC_BOX_MODE_FOURTH_SWITCH - dead_band)
-        return MUSIC_BOX_MODE_MELODY;
-    if (position >= MUSIC_BOX_MODE_FOURTH_SWITCH + dead_band &&
-        position <= MUSIC_BOX_MODE_FIFTH_SWITCH - dead_band) return MUSIC_BOX_MODE_FILES;
-    if (position >= MUSIC_BOX_MODE_FIFTH_SWITCH + dead_band) return MUSIC_BOX_MODE_WAVE;
+    for (unsigned int zone = 0u; zone < MUSIC_BOX_MODE_COUNT; ++zone) {
+        if (zone > 0u && position < switches[zone - 1u] + dead_band) continue;
+        if (zone + 1u < MUSIC_BOX_MODE_COUNT && position > switches[zone] - dead_band) continue;
+        return order[zone];
+    }
     /* Inside a dead band: hold whatever the knob last resolved to. */
     return current;
 }

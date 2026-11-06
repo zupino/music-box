@@ -12,6 +12,8 @@ fi
 
 # audio.jack.autoconnect must remain disabled. Music Box routes FluidSynth into
 # its own mixer so that the exact speaker signal is available to the AEC.
+# Pad notes are routed to melodic MIDI channel 1 by midi.c. Do not use
+# synth.drums-channel.active: released FluidSynth versions reject that setting.
 # /dev/zero preserves compatibility with old FluidSynth packages that exited
 # after receiving EOF on stdin even when used as a service.
 exec /usr/bin/fluidsynth \
@@ -22,5 +24,4 @@ exec /usr/bin/fluidsynth \
     -g "$FLUIDSYNTH_GAIN" \
     -o audio.jack.autoconnect=0 \
     -o audio.jack.id=fluidsynth \
-    -o synth.drums-channel.active=no \
     "$MUSIC_BOX_SOUNDFONT" < /dev/zero
